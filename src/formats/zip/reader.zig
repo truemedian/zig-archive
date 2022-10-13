@@ -68,16 +68,17 @@ fn lessThanCentralDirectoryRecord(buf: []const u8, a: format.CentralDirectoryRec
 }
 
 pub const ArchiveReader = struct {
-    allocator: std.mem.Allocator,
     source: std.io.StreamSource,
 
-    start_offset: u64 = 0,
     directory: std.ArrayListUnmanaged(format.CentralDirectoryRecord) = .{},
+    start_offset: u64 = 0,
 
     filename_buf: std.ArrayListUnmanaged(u8) = .{},
 
     // TODO: remove, this is for testing
     __directory_size: u64 = 0,
+
+    allocator: std.mem.Allocator,
 
     pub fn init(allocator: std.mem.Allocator, source: std.io.StreamSource) ArchiveReader {
         return .{
@@ -91,6 +92,7 @@ pub const ArchiveReader = struct {
         self.filename_buf.deinit(self.allocator);
     }
 
+    /// Finds and reads the zip central directory. Expects a correct zip file.
     pub fn load(self: *ArchiveReader) !void {
         const reader = self.source.reader();
         const seeker = self.source.seekableStream();
@@ -251,11 +253,19 @@ pub const ArchiveReader = struct {
         return self.filename_buf.items[item.filename_idx..][0..item.filename_len];
     }
 
-    pub fn getHeader(self: ArchiveReader, index: usize) CentralDirectoryHeader {
+    /// Get the directory header at the given index.
+    pub fn getHeader(
+        self: ArchiveReader,
+        index: usize,
+    ) CentralDirectoryHeader {
         return CentralDirectoryHeader.read(self, self.directory.items[index]);
     }
 
-    pub fn findFile(self: ArchiveReader, name: []const u8) ?CentralDirectoryHeader {
+    /// Get the directory header of a file with a given name.
+    pub fn findFile(
+        self: ArchiveReader,
+        name: []const u8,
+    ) ?CentralDirectoryHeader {
         for (self.directory.items) |item, i| {
             const filename = self.readFilename(item);
             if (std.mem.eql(u8, filename, name)) {
@@ -264,7 +274,37 @@ pub const ArchiveReader = struct {
         }
     }
 
-    pub fn extractFile(self: *ArchiveReader, header: CentralDirectoryHeader, writer: anytype) !void {
+    /// Get the directory header of a file with a given name.
+    ///
+    /// Strips off the first `strip_components` components of the path in the
+    /// archive before comparing.
+    pub fn findFileInside(
+        self: ArchiveReader,
+        name: []const u8,
+        strip_components: usize,
+    ) ?CentralDirectoryHeader {
+        find: for (self.directory.items) |item, i| {
+            var filename = self.readFilename(item);
+
+            var j: usize = 0;
+            while (j < strip_components) : (j += 1) {
+                const idx = std.mem.indexOf(u8, filename, "/") orelse continue :find;
+                filename = filename[idx + 1 ..];
+            }
+
+            if (std.mem.eql(u8, filename, name)) {
+                return self.getHeader(i);
+            }
+        }
+    }
+
+    /// Extracts the contents of an archived file and writes it into the given
+    /// writer.
+    pub fn extractFile(
+        self: *ArchiveReader,
+        header: CentralDirectoryHeader,
+        writer: anytype,
+    ) !void {
         if (header.uncompressed_size == 0) return;
 
         const reader = self.source.reader();
@@ -304,9 +344,16 @@ pub const ArchiveReader = struct {
         }
     }
 
-    pub fn extractFileString(self: *ArchiveReader, header: CentralDirectoryHeader) ![]const u8 {
-        const out = try self.allocator.alloc(u8, header.uncompressed_size);
-        errdefer self.allocator.free(out);
+    /// Extracts the contents of an archived file and returns it as a string.
+    ///
+    /// The caller owns the returned memory.
+    pub fn extractFileString(
+        self: *ArchiveReader,
+        header: CentralDirectoryHeader,
+        alloc: std.mem.Allocator,
+    ) ![]const u8 {
+        const out = try alloc.alloc(u8, header.uncompressed_size);
+        errdefer alloc.free(out);
 
         var stream = std.io.fixedBufferStream(out);
 
