@@ -307,16 +307,13 @@ pub const ArchiveReader = struct {
     ) !void {
         if (header.uncompressed_size == 0) return;
 
+        if (header.version_needed.major > 4) return error.UnsupportedVersion;
+        if (header.version_needed.major == 4 and header.version_needed.minor > 5) return error.UnsupportedVersion;
+
         const reader = self.source.reader();
         const seeker = self.source.seekableStream();
 
-        const local_offset = self.start_offset + header.offset;
-        const uncompressed_size = header.uncompressed_size;
-
-        const out = try self.allocator.alloc(u8, uncompressed_size);
-        errdefer self.allocator.free(out);
-
-        try seeker.seekTo(local_offset);
+        try seeker.seekTo(self.start_offset + header.offset);
         const local_header = try format.LocalFileRecord.read(reader);
 
         try seeker.seekBy(local_header.filename_len + local_header.extra_len);
