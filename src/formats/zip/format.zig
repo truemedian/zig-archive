@@ -10,6 +10,9 @@ pub const CompressionMethod = enum(u16) {
     _,
 };
 
+const Crc32Poly = @intToEnum(std.hash.crc.Polynomial, 0xEDB88320);
+pub const Crc32 = std.hash.crc.Crc32WithPoly(Crc32Poly);
+
 pub const Version = struct {
     pub const Vendor = enum(u8) {
         dos = 0,
@@ -137,11 +140,12 @@ pub const DosTimestamp = struct {
 
 pub const LocalFileRecord = struct {
     pub const signature = 0x04034b50;
+    pub const size = 30;
 
     signature: u32,
     version: u16,
-    flags: u16,
-    compression_method: u16,
+    flags: GeneralPurposeBitFlag,
+    compression_method: CompressionMethod,
     last_mod_time: u16,
     last_mod_date: u16,
     crc32: u32,
@@ -161,8 +165,8 @@ pub const LocalFileRecord = struct {
         if (self.signature != signature) return error.InvalidSignature;
 
         self.version = mem.readIntLittle(u16, buf[4..6]);
-        self.flags = mem.readIntLittle(u16, buf[6..8]);
-        self.compression_method = mem.readIntLittle(u16, buf[8..10]);
+        self.flags = @bitCast(GeneralPurposeBitFlag, mem.readIntLittle(u16, buf[6..8]));
+        self.compression_method = @intToEnum(CompressionMethod, mem.readIntLittle(u16, buf[8..10]));
         self.last_mod_time = mem.readIntLittle(u16, buf[10..12]);
         self.last_mod_date = mem.readIntLittle(u16, buf[12..14]);
         self.crc32 = mem.readIntLittle(u32, buf[14..18]);
@@ -178,8 +182,8 @@ pub const LocalFileRecord = struct {
         try writer.writeIntLittle(u32, signature);
 
         try writer.writeIntLittle(u16, self.version);
-        try writer.writeIntLittle(u16, self.flags);
-        try writer.writeIntLittle(u16, self.compression_method);
+        try writer.writeIntLittle(u16, @bitCast(u16, self.flags));
+        try writer.writeIntLittle(u16, @enumToInt(self.compression_method));
         try writer.writeIntLittle(u16, self.last_mod_time);
         try writer.writeIntLittle(u16, self.last_mod_date);
         try writer.writeIntLittle(u32, self.crc32);
@@ -195,8 +199,8 @@ pub const CentralDirectoryRecord = struct {
 
     version_made: u16,
     version_needed: u16,
-    flags: u16,
-    compression_method: u16,
+    flags: GeneralPurposeBitFlag,
+    compression_method: CompressionMethod,
     last_mod_time: u16,
     last_mod_date: u16,
     crc32: u32,
@@ -224,8 +228,8 @@ pub const CentralDirectoryRecord = struct {
 
         record.version_made = mem.readIntLittle(u16, buf[0..2]);
         record.version_needed = mem.readIntLittle(u16, buf[2..4]);
-        record.flags = mem.readIntLittle(u16, buf[4..6]);
-        record.compression_method = mem.readIntLittle(u16, buf[6..8]);
+        record.flags = @bitCast(GeneralPurposeBitFlag, mem.readIntLittle(u16, buf[4..6]));
+        record.compression_method = @intToEnum(CompressionMethod, mem.readIntLittle(u16, buf[6..8]));
         record.last_mod_time = mem.readIntLittle(u16, buf[8..10]);
         record.last_mod_date = mem.readIntLittle(u16, buf[10..12]);
         record.crc32 = mem.readIntLittle(u32, buf[12..16]);
@@ -247,8 +251,8 @@ pub const CentralDirectoryRecord = struct {
 
         try writer.writeIntLittle(u16, self.version_made);
         try writer.writeIntLittle(u16, self.version_needed);
-        try writer.writeIntLittle(u16, self.flags);
-        try writer.writeIntLittle(u16, self.compression_method);
+        try writer.writeIntLittle(u16, @bitCast(u16, self.flags));
+        try writer.writeIntLittle(u16, @enumToInt(self.compression_method));
         try writer.writeIntLittle(u16, self.last_mod_time);
         try writer.writeIntLittle(u16, self.last_mod_date);
         try writer.writeIntLittle(u32, self.crc32);
@@ -399,5 +403,46 @@ pub const EndOfCentralDirectoryRecord = struct {
         return self.directory_size == 0xffffffff or
             self.directory_offset == 0xffffffff or
             self.entries_total == 0xffff;
+    }
+};
+
+pub const ExtraFieldZip64 = struct {
+    uncompressed: ?u64 = null,
+    compressed: ?u64 = null,
+    offset: ?u64 = null,
+
+    pub fn present(self: ExtraFieldZip64) bool {
+        return !(self.uncompressed == null and self.compressed == null and self.offset == null);
+    }
+
+    pub fn length(self: ExtraFieldZip64) u16 {
+        if (!self.present()) return 0;
+
+        var size: u16 = 4;
+
+        if (self.uncompressed != null) size += 8;
+        if (self.compressed != null) size += 8;
+        if (self.offset != null) size += 8;
+
+        return size;
+    }
+
+    pub fn write(self: ExtraFieldZip64, writer: anytype) !void {
+        if (!self.present()) return;
+
+        try writer.writeIntLittle(u16, 0x0001);
+        try writer.writeIntLittle(u16, self.length() - 4);
+
+        if (self.uncompressed) |num| {
+            try writer.writeIntLittle(u64, num);
+        }
+
+        if (self.compressed) |num| {
+            try writer.writeIntLittle(u64, num);
+        }
+
+        if (self.offset) |num| {
+            try writer.writeIntLittle(u64, num);
+        }
     }
 };

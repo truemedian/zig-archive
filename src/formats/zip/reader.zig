@@ -6,6 +6,8 @@ const deflate = std.compress.deflate;
 
 const format = @import("format.zig");
 
+const HashingWriter = @import("../../hashing_writer.zig").HashingWriter;
+
 const BufferedSeekableSource = @import("../../seekable_buffered_stream.zig").mixin(
     std.io.StreamSource.Reader,
     std.io.StreamSource.SeekableStream,
@@ -30,8 +32,8 @@ pub const CentralDirectoryHeader = struct {
 
         header.version_made = format.Version.read(rec.version_made);
         header.version_needed = format.Version.read(rec.version_needed);
-        header.flags = format.GeneralPurposeBitFlag.read(rec.flags);
-        header.compression_method = @intToEnum(format.CompressionMethod, rec.compression_method);
+        header.flags = rec.flags;
+        header.compression_method = rec.compression_method;
         header.last_mod = format.DosTimestamp.read(.{ rec.last_mod_time, rec.last_mod_date });
 
         header.crc32 = rec.crc32;
@@ -68,7 +70,7 @@ fn lessThanCentralDirectoryRecord(buf: []const u8, a: format.CentralDirectoryRec
 }
 
 pub const ArchiveReader = struct {
-    source: std.io.StreamSource,
+    source: *std.io.StreamSource,
 
     directory: std.ArrayListUnmanaged(format.CentralDirectoryRecord) = .{},
     start_offset: u64 = 0,
@@ -80,7 +82,7 @@ pub const ArchiveReader = struct {
 
     allocator: std.mem.Allocator,
 
-    pub fn init(allocator: std.mem.Allocator, source: std.io.StreamSource) ArchiveReader {
+    pub fn init(allocator: std.mem.Allocator, source: *std.io.StreamSource) ArchiveReader {
         return .{
             .allocator = allocator,
             .source = source,
@@ -304,6 +306,7 @@ pub const ArchiveReader = struct {
         self: *ArchiveReader,
         header: CentralDirectoryHeader,
         writer: anytype,
+        verify: bool,
     ) !void {
         if (header.uncompressed_size == 0) return;
 
@@ -326,18 +329,25 @@ pub const ArchiveReader = struct {
         var limited = BufferedSeekableSource.LimitedReader.init(buffered_reader, header.compressed_size);
         const limited_reader = limited.reader();
 
+        var hashing = HashingWriter(@TypeOf(writer), format.Crc32).init(writer);
+        const hwriter = hashing.writer();
+
         switch (header.compression_method) {
             .none => {
-                try fifo.pump(limited_reader, writer);
+                try fifo.pump(limited_reader, hwriter);
             },
             .deflated => {
                 // This is not reusable, is there a reason for that?
                 var decompressor = try deflate.decompressor(self.allocator, limited_reader, null);
                 defer decompressor.deinit();
 
-                try fifo.pump(decompressor.reader(), writer);
+                try fifo.pump(decompressor.reader(), hwriter);
             },
             else => return error.UnsupportedCompressionMethod,
+        }
+
+        if (verify) {
+            if (hashing.hash.final() != header.crc32) return error.InvalidChecksum;
         }
     }
 
@@ -348,13 +358,14 @@ pub const ArchiveReader = struct {
         self: *ArchiveReader,
         header: CentralDirectoryHeader,
         alloc: std.mem.Allocator,
+        verify: bool,
     ) ![]const u8 {
         const out = try alloc.alloc(u8, header.uncompressed_size);
         errdefer alloc.free(out);
 
         var stream = std.io.fixedBufferStream(out);
 
-        try self.extractFile(header, stream.writer());
+        try self.extractFile(header, stream.writer(), verify);
 
         return out;
     }
