@@ -49,13 +49,56 @@ pub const ArchiveWriter = struct {
             const extra = self.extra_data.items[record.filename_idx];
             try extra.write(self.sink.writer());
         }
+
         const final_offset = try self.sink.getPos();
+        const dir_size = final_offset - offset;
+
+        const needs_entries64 = self.directory.items.len >= math.maxInt(u16);
+        const needs_offset64 = offset >= math.maxInt(u32);
+        const needs_size64 = dir_size >= math.maxInt(u32);
 
         var eocd = std.mem.zeroes(format.EndOfCentralDirectoryRecord);
-        eocd.entries_on_disk = @intCast(u16, self.directory.items.len);
-        eocd.entries_total = @intCast(u16, self.directory.items.len);
-        eocd.directory_size = @intCast(u32, final_offset - offset);
-        eocd.directory_offset = @intCast(u32, offset);
+
+        if (needs_entries64) {
+            eocd.entries_on_disk = math.maxInt(u16);
+            eocd.entries_total = math.maxInt(u16);
+        } else {
+            eocd.entries_on_disk = @truncate(u16, self.directory.items.len);
+            eocd.entries_total = @truncate(u16, self.directory.items.len);
+        }
+
+        if (needs_size64) {
+            eocd.directory_size = math.maxInt(u32);
+        } else {
+            eocd.directory_size = @truncate(u32, dir_size);
+        }
+
+        if (needs_offset64) {
+            eocd.directory_offset = math.maxInt(u32);
+        } else {
+            eocd.directory_offset = @truncate(u32, offset);
+        }
+
+        if (needs_entries64 or needs_size64 or needs_offset64) {
+            var eocd64 = std.mem.zeroes(format.EndOfCentralDirectory64Record);
+
+            eocd64.size = 52;
+            eocd64.version_made = version_needed_with64.write();
+            eocd64.version_needed = version_needed_with64.write();
+            eocd64.num_entries_disk = self.directory.items.len;
+            eocd64.num_entries_total = self.directory.items.len;
+            eocd64.directory_size = dir_size;
+            eocd64.directory_offset = offset;
+
+            try eocd64.write(self.sink.writer());
+
+            var eocd64l = std.mem.zeroes(format.EndOfCentralDirectory64Locator);
+
+            eocd64l.offset = final_offset;
+            eocd64l.num_disks = 1;
+
+            try eocd64l.write(self.sink.writer());
+        }
 
         try eocd.write(self.sink.writer());
     }
@@ -79,8 +122,8 @@ pub const ArchiveWriter = struct {
         const uncomp_size = try src.getEndPos();
         const local_offset = try self.sink.getPos();
 
-        const need_size64 = uncomp_size > math.maxInt(i32);
-        const need_offset64 = local_offset > math.maxInt(i32);
+        const need_size64 = uncomp_size >= math.maxInt(u32);
+        const need_offset64 = local_offset >= math.maxInt(u32);
 
         var extra = format.ExtraFieldZip64{};
 
