@@ -148,12 +148,13 @@ pub const ArchiveReader = struct {
                 if ((try seeker.getPos()) == 0) return error.InvalidArchive;
                 try seeker.seekBy(-1021);
 
-                _ = try reader.readAll(buf);
+                const read = try reader.readAll(buf);
 
-                offset = 1020;
+                offset = read - 4;
                 while (offset >= 0) : (offset -= 1) {
                     const signature = std.mem.readIntLittle(u32, buf[offset..][0..4]);
                     if (signature == format.EndOfCentralDirectory64Locator.signature) {
+                        try seeker.seekBy(-@intCast(i64, read - offset) + 4);
                         break :find_eocd64l;
                     }
 
@@ -164,6 +165,8 @@ pub const ArchiveReader = struct {
 
             const eocd64l = try format.EndOfCentralDirectory64Locator.read(reader);
             try seeker.seekTo(eocd64l.offset);
+
+            self.start_offset = eocd64l.offset;
 
             const eocd64 = try format.EndOfCentralDirectory64Record.read(reader);
 
@@ -183,8 +186,6 @@ pub const ArchiveReader = struct {
         self.__directory_size = directory_size;
 
         // Begin loading central directory
-
-        try seeker.seekTo(directory_offset);
 
         self.start_offset -= directory_offset + directory_size;
 

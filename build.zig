@@ -27,6 +27,7 @@ pub fn build(b: *Builder) void {
     inline for (tests) |file| {
         const zip_runner = b.addExecutable(file, "tests/" ++ file ++ ".zig");
         zip_runner.setBuildMode(mode);
+        zip_runner.linkLibC();
 
         zip_runner.addPackagePath("archive", "src/main.zig");
 

@@ -20,8 +20,8 @@ pub const ArchiveWriter = struct {
     sink: *std.io.StreamSource,
 
     directory: std.ArrayListUnmanaged(format.CentralDirectoryRecord) = .{},
-    filenames: std.ArrayListUnmanaged([]const u8) = .{},
     extra_data: std.ArrayListUnmanaged(format.ExtraFieldZip64) = .{},
+    filenames: std.ArrayListUnmanaged(u8) = .{},
 
     allocator: std.mem.Allocator,
 
@@ -40,13 +40,13 @@ pub const ArchiveWriter = struct {
 
     pub fn finish(self: *ArchiveWriter) !void {
         const offset = try self.sink.getPos();
-        for (self.directory.items) |record| {
+        for (self.directory.items) |record, i| {
             try record.write(self.sink.writer());
 
-            const name = self.filenames.items[record.filename_idx];
+            const name = self.filenames.items[record.filename_idx..][0..record.filename_len];
             try self.sink.writer().writeAll(name);
 
-            const extra = self.extra_data.items[record.filename_idx];
+            const extra = self.extra_data.items[i];
             try extra.write(self.sink.writer());
         }
 
@@ -82,7 +82,7 @@ pub const ArchiveWriter = struct {
         if (needs_entries64 or needs_size64 or needs_offset64) {
             var eocd64 = std.mem.zeroes(format.EndOfCentralDirectory64Record);
 
-            eocd64.size = 52;
+            eocd64.size = 44;
             eocd64.version_made = version_needed_with64.write();
             eocd64.version_needed = version_needed_with64.write();
             eocd64.num_entries_disk = self.directory.items.len;
@@ -146,7 +146,8 @@ pub const ArchiveWriter = struct {
 
         var fifo = Fifo.init();
         if (compress) {
-            var compressor = try std.compress.deflate.compressor(self.allocator, buffered.writer(), .{ .level = .huffman_only });
+            var compressor = try std.compress.deflate.compressor(self.allocator, buffered.writer(), .{});
+            defer compressor.deinit();
 
             try fifo.pump(hashing.reader(), compressor.writer());
             try compressor.close();
@@ -210,9 +211,7 @@ pub const ArchiveWriter = struct {
         }
 
         entry.filename_idx = self.filenames.items.len;
-
-        const duped_name = try self.allocator.dupe(u8, name);
-        try self.filenames.append(self.allocator, duped_name);
+        try self.filenames.appendSlice(self.allocator, name);
         try self.extra_data.append(self.allocator, extra);
     }
 };

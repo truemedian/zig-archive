@@ -17,7 +17,7 @@ pub fn main() !void {
         var stream = std.io.fixedBufferStream(@as([]const u8, str));
         var source = std.io.StreamSource{ .const_buffer = stream };
 
-        var arc = archive.formats.zip.reader.ArchiveReader.init(alloc, source);
+        var arc = archive.formats.zip.reader.ArchiveReader.init(alloc, &source);
         defer arc.deinit();
 
         // Load
