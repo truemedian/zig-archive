@@ -34,8 +34,8 @@ pub const ArchiveWriter = struct {
 
     pub fn deinit(self: *ArchiveWriter) void {
         self.directory.deinit(self.allocator);
-
         self.filenames.deinit(self.allocator);
+        self.extra_data.deinit(self.allocator);
     }
 
     pub fn finish(self: *ArchiveWriter) !void {
