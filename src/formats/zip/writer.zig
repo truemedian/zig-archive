@@ -4,7 +4,10 @@ const math = std.math;
 const ascii = std.ascii;
 const deflate = std.compress.deflate;
 
-const HashingWriter = @import("../../hashing_writer.zig").HashingWriter;
+const hashing_util = @import("../../hashing.zig");
+
+const BufferedWriter = std.io.BufferedWriter(8192, std.io.StreamSource.Writer);
+const HashingReader = hashing_util.HashingReader(std.io.StreamSource.Reader, format.Crc32);
 
 const format = @import("format.zig");
 
@@ -94,20 +97,20 @@ pub const ArchiveWriter = struct {
 
         try self.sink.seekBy(@intCast(i64, format.LocalFileRecord.size + name.len + local.extra_len));
 
-        var hashing = HashingStreamWriter.init(self.sink.writer());
-        var buffered = BufferedWriter{ .unbuffered_writer = hashing.writer() };
+        var hashing = HashingReader.init(src.reader());
+        var buffered = BufferedWriter{ .unbuffered_writer = self.sink.writer() };
         var comp_size: u64 = 0;
 
         var fifo = Fifo.init();
         if (compress) {
-            var compressor = try std.compress.deflate.compressor(self.allocator, buffered.writer(), .{});
+            var compressor = try std.compress.deflate.compressor(self.allocator, buffered.writer(), .{ .level = .huffman_only });
 
-            try fifo.pump(src.reader(), compressor.writer());
-            try compressor.flush();
+            try fifo.pump(hashing.reader(), compressor.writer());
+            try compressor.close();
 
             comp_size = compressor.bytesWritten();
         } else {
-            try fifo.pump(src.reader(), buffered.writer());
+            try fifo.pump(hashing.reader(), buffered.writer());
             comp_size = uncomp_size;
         }
 
@@ -170,6 +173,3 @@ pub const ArchiveWriter = struct {
         try self.extra_data.append(self.allocator, extra);
     }
 };
-
-const BufferedWriter = std.io.BufferedWriter(8192, HashingStreamWriter.Writer);
-const HashingStreamWriter = HashingWriter(std.io.StreamSource.Writer, format.Crc32);

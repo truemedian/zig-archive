@@ -4,14 +4,15 @@ const math = std.math;
 const ascii = std.ascii;
 const deflate = std.compress.deflate;
 
-const format = @import("format.zig");
-
-const HashingWriter = @import("../../hashing_writer.zig").HashingWriter;
+const hashing_util = @import("../../hashing.zig");
+const HashingWriter = hashing_util.HashingWriter;
 
 const BufferedSeekableSource = @import("../../seekable_buffered_stream.zig").mixin(
     std.io.StreamSource.Reader,
     std.io.StreamSource.SeekableStream,
 );
+
+const format = @import("format.zig");
 
 pub const CentralDirectoryHeader = struct {
     version_made: format.Version,

@@ -29,3 +29,33 @@ pub fn HashingWriter(comptime WriterType: type, comptime Crc32: type) type {
         }
     };
 }
+
+pub fn HashingReader(comptime ReaderType: type, comptime Crc32: type) type {
+    return struct {
+        const Self = @This();
+
+        pub const ReadError = ReaderType.Error;
+
+        src: ReaderType,
+        hash: Crc32,
+
+        pub const Reader = std.io.Reader(*Self, ReadError, read);
+
+        pub fn init(reader_: ReaderType) Self {
+            return .{
+                .src = reader_,
+                .hash = Crc32.init(),
+            };
+        }
+
+        pub fn reader(self: *Self) Reader {
+            return .{ .context = self };
+        }
+
+        pub fn read(self: *Self, bytes: []u8) ReadError!usize {
+            const nread = try self.src.read(bytes);
+            self.hash.update(bytes[0..nread]);
+            return nread;
+        }
+    };
+}

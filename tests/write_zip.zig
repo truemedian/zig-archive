@@ -12,6 +12,6 @@ pub fn main() !void {
     var arc = archive.formats.zip.writer.ArchiveWriter.init(alloc, &stream);
     defer arc.deinit();
 
-    try arc.writeString("test.txt", "Hello, World!", true);
+    try arc.writeString("test.txt", "aaaaaabbbbbbcccccc", true);
     try arc.finish();
 }
