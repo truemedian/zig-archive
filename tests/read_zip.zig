@@ -46,7 +46,7 @@ pub fn main() !void {
             entry.name,
             try source.getEndPos(),
             arc.directory.items.len,
-            arc.__directory_size,
+            arc.directory_size,
             arc.filename_buf.items.len,
         });
     }

@@ -9,6 +9,141 @@ const alloc = std.heap.page_allocator;
 
 pub fn main() !void {
     const in_dir = try std.fs.cwd().openIterableDir("tests/zip", .{});
+
+    // Write Benchmarks
+
+    std.debug.print("*** Write Benchmarks ***\n", .{});
+
+    {
+        var benchmark = Benchmark(.{ "add", "finish" }, build_options.runtime){};
+        var timer = std.time.Timer.start() catch unreachable;
+
+        var runtime_timer = std.time.Timer.start() catch unreachable;
+        var first = true;
+
+        while (benchmark.run()) {
+            const fd = try in_dir.dir.createFile("small.zip", .{});
+            defer fd.close();
+
+            var stream = std.io.StreamSource{ .file = fd };
+
+            var arc = archive.formats.zip.writer.ArchiveWriter.init(alloc, &stream);
+            defer arc.deinit();
+
+            timer.reset();
+
+            var i: usize = 0;
+            while (i < 10000) : (i += 1) {
+                const name = try std.fmt.allocPrint(alloc, "test{}.txt", .{i});
+                defer alloc.free(name);
+
+                try arc.writeString(name, "aaaa", false);
+            }
+
+            const offset = @intCast(usize, try fd.getPos());
+
+            benchmark.add("add", timer.read());
+            benchmark.setSize("add", offset);
+
+            timer.reset();
+
+            try arc.finish();
+
+            const offset_after = @intCast(usize, try fd.getPos());
+
+            benchmark.add("finish", timer.read());
+            benchmark.setSize("finish", offset_after - offset);
+
+            if (first) {
+                first = false;
+                std.debug.print(
+                    \\name: small.zip
+                    \\size: {d}
+                    \\directory: {d} items, {d} bytes, {d} bytes of filenames
+                    \\
+                    \\
+                , .{
+                    try fd.getEndPos(),
+                    arc.directory.items.len,
+                    offset_after - offset,
+                    arc.filenames.items.len,
+                });
+            }
+        }
+
+        const runtime = runtime_timer.read();
+        std.debug.print("done in {d}s\n\n", .{runtime / 1_000_000_000});
+
+        benchmark.report();
+    }
+
+    {
+        var benchmark = Benchmark(.{ "add", "finish" }, build_options.runtime){};
+        var timer = std.time.Timer.start() catch unreachable;
+
+        var runtime_timer = std.time.Timer.start() catch unreachable;
+        var first = true;
+
+        while (benchmark.run()) {
+            const fd = try in_dir.dir.createFile("large.zip", .{});
+            defer fd.close();
+
+            var stream = std.io.StreamSource{ .file = fd };
+
+            var arc = archive.formats.zip.writer.ArchiveWriter.init(alloc, &stream);
+            defer arc.deinit();
+
+            timer.reset();
+
+            var i: usize = 0;
+            while (i < 100) : (i += 1) {
+                const name = try std.fmt.allocPrint(alloc, "test{}.txt", .{i});
+                defer alloc.free(name);
+
+                try arc.writeString(name, "aaaa" ** 4096, true);
+            }
+
+            const offset = @intCast(usize, try fd.getPos());
+
+            benchmark.add("add", timer.read());
+            benchmark.setSize("add", offset);
+
+            timer.reset();
+
+            try arc.finish();
+
+            const offset_after = @intCast(usize, try fd.getPos());
+
+            benchmark.add("finish", timer.read());
+            benchmark.setSize("finish", offset_after - offset);
+
+            if (first) {
+                first = false;
+                std.debug.print(
+                    \\name: large.zip
+                    \\size: {d}
+                    \\directory: {d} items, {d} bytes, {d} bytes of filenames
+                    \\
+                    \\
+                , .{
+                    try fd.getEndPos(),
+                    arc.directory.items.len,
+                    offset_after - offset,
+                    arc.filenames.items.len,
+                });
+            }
+        }
+
+        const runtime = runtime_timer.read();
+        std.debug.print("done in {d}s\n\n", .{runtime / 1_000_000_000});
+
+        benchmark.report();
+    }
+
+    // Read Benchmarks
+
+    std.debug.print("*** Read Benchmarks ***\n", .{});
+
     var it = in_dir.iterate();
 
     while (try it.next()) |entry| {
@@ -53,7 +188,7 @@ pub fn main() !void {
             try arc.load();
 
             benchmark.add("load", timer.read());
-            benchmark.setSize("load", arc.__directory_size);
+            benchmark.setSize("load", arc.directory_size);
 
             // Extract
 
@@ -98,7 +233,7 @@ pub fn main() !void {
                     entry.name,
                     try source.getEndPos(),
                     arc.directory.items.len,
-                    arc.__directory_size,
+                    arc.directory_size,
                     arc.filename_buf.items.len,
                 });
             }

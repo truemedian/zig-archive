@@ -78,8 +78,8 @@ pub const ArchiveReader = struct {
 
     filename_buf: std.ArrayListUnmanaged(u8) = .{},
 
-    // TODO: remove, this is for testing
-    __directory_size: u64 = 0,
+    directory_offset: u64 = 0,
+    directory_size: u64 = 0,
 
     allocator: std.mem.Allocator,
 
@@ -183,7 +183,8 @@ pub const ArchiveReader = struct {
             }
         }
 
-        self.__directory_size = directory_size;
+        self.directory_offset = directory_offset;
+        self.directory_size = directory_size;
 
         // Begin loading central directory
 

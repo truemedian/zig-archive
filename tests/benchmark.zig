@@ -1,4 +1,5 @@
 const std = @import("std");
+const builtin = @import("builtin");
 
 const alloc = std.heap.page_allocator;
 
@@ -14,15 +15,27 @@ pub fn Benchmark(
 
         samples: usize = 0,
         iteration: usize = 0,
-        warmups: i32 = 100,
+        warmups: i32 = 10,
 
         pub fn run(self: *Self) bool {
             if (self.warmups >= 0) {
                 if (self.warmups == 0) {
+                    var warmup_time = std.math.inf(f64);
+
+                    inline for (datasets) |dataset| {
+                        warmup_time = std.math.min(warmup_time, self.sum(dataset));
+                    }
+
+                    if (warmup_time / 1e9 < 10) {
+                        self.warmups = 10;
+
+                        return true;
+                    }
+
                     var samples = std.math.inf(f64);
 
                     inline for (datasets) |dataset| {
-                        samples = std.math.min(samples, (runtime_sec * 1e9) / self.mean(dataset));
+                        samples = std.math.min(samples, (@intToFloat(f64, runtime_sec) * 1e9) / self.mean(dataset));
                     }
 
                     self.samples = @floatToInt(usize, samples) + 1;
@@ -81,16 +94,22 @@ pub fn Benchmark(
             return val;
         }
 
+        pub fn sum(self: Self, comptime field: []const u8) f64 {
+            const items = self.measurements[indexOf(field)].items;
+
+            var this_sum: f64 = 0.0;
+
+            for (items) |measurement| {
+                this_sum += measurement;
+            }
+
+            return this_sum;
+        }
+
         pub fn mean(self: Self, comptime field: []const u8) f64 {
             const items = self.measurements[indexOf(field)].items;
 
-            var sum: f64 = 0.0;
-
-            for (items) |measurement| {
-                sum += measurement;
-            }
-
-            return sum / @intToFloat(f64, items.len);
+            return self.sum(field) / @intToFloat(f64, items.len);
         }
 
         pub fn median(self: Self, comptime field: []const u8) f64 {
@@ -130,13 +149,13 @@ pub fn Benchmark(
         pub fn meanSpeed(self: Self, comptime field: []const u8) f64 {
             const items = self.measurements[indexOf(field)].items;
 
-            var sum: f64 = 0.0;
+            var this_sum: f64 = 0.0;
 
             for (items) |measurement| {
-                sum += @intToFloat(f64, self.sizes[indexOf(field)]) / (measurement / 1e9);
+                this_sum += @intToFloat(f64, self.sizes[indexOf(field)]) / (measurement / 1e9);
             }
 
-            return sum / @intToFloat(f64, items.len);
+            return this_sum / @intToFloat(f64, items.len);
         }
 
         pub fn stddevSpeed(self: Self, comptime field: []const u8) f64 {
@@ -176,7 +195,7 @@ pub fn Benchmark(
                 \\
             , .{
                 field,
-                self.samples,
+                self.measurements[indexOf(field)].items.len,
                 Nanoseconds{ .data = self.min(field) },
                 Nanoseconds{ .data = self.max(field) },
                 Nanoseconds{ .data = self.mean(field) },

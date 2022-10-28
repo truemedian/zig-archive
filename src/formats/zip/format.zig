@@ -267,7 +267,6 @@ pub const CentralDirectoryRecord = struct {
         try writer.writeIntLittle(u32, @truncate(u32, self.local_offset));
     }
 
-    // we only check the fields we actually use, the rest we don't care about
     pub fn needs64(self: CentralDirectoryRecord) bool {
         return self.compressed_size == 0xffffffff or
             self.uncompressed_size == 0xffffffff or
@@ -398,7 +397,6 @@ pub const EndOfCentralDirectoryRecord = struct {
         try writer.writeIntLittle(u16, self.comment_length);
     }
 
-    // we only check the fields we actually use, the rest we don't care about
     pub fn needs64(self: EndOfCentralDirectoryRecord) bool {
         return self.directory_size == 0xffffffff or
             self.directory_offset == 0xffffffff or
