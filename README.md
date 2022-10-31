@@ -17,4 +17,5 @@ Reading and writing archives in zig.
 ## Examples
 
 Reading (and extracting) a zip archive: tests/read_zip.zig
+
 Writing a zip archive: tests/write_zip.zig
