@@ -1,0 +1,35 @@
+name: Linux
+
+on:
+  push:
+    paths:
+      - "**.zig"
+  pull_request:
+    paths:
+      - "**.zig"
+  schedule:
+    - cron: "0 0 * * *"
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+
+      - name: Setup Zig
+        uses: goto-bus-stop/setup-zig@v1
+        with:
+          version: master
+
+      - name: Download
+        run: |
+          curl -fLO tests/zip/zig-windows.zip https://github.com/ziglang/zig/archive/refs/heads/master.zip
+          curl -fLO tests/zip/zig-windows-release.zip https://ziglang.org/download/0.9.0/zig-windows-x86_64-0.9.0.zip
+
+      - name: Write Zip
+        run: zig build write_zip
+        
+      - name: Read Zip
+        run: zig build read_zip

@@ -13,44 +13,20 @@ pub fn Benchmark(
         measurements: [datasets.len]std.ArrayListUnmanaged(f64) = .{.{}} ** datasets.len,
         sizes: [datasets.len]usize = .{0} ** datasets.len,
 
-        samples: usize = 0,
+        timer: std.time.Timer = undefined,
         iteration: usize = 0,
-        warmups: i32 = 10,
 
         pub fn run(self: *Self) bool {
-            if (self.warmups >= 0) {
-                if (self.warmups == 0) {
-                    var warmup_time = std.math.inf(f64);
-
-                    inline for (datasets) |dataset| {
-                        warmup_time = std.math.min(warmup_time, self.sum(dataset));
-                    }
-
-                    if (warmup_time / 1e9 < 10) {
-                        self.warmups = 10;
-
-                        return true;
-                    }
-
-                    var samples = std.math.inf(f64);
-
-                    inline for (datasets) |dataset| {
-                        samples = std.math.min(samples, (@intToFloat(f64, runtime_sec) * 1e9) / self.mean(dataset));
-                    }
-
-                    self.samples = @floatToInt(usize, samples) + 1;
-                }
-
-                self.warmups -= 1;
-
-                return true;
-            } else {
-                if (self.iteration == self.samples)
-                    return false;
-
-                self.iteration += 1;
-                return true;
+            if (self.iteration == 0) {
+                self.timer = std.time.Timer.start() catch unreachable;
             }
+
+            self.iteration += 1;
+
+            if (self.timer.read() >= runtime_sec * std.time.ns_per_s)
+                return false;
+
+            return true;
         }
 
         pub fn add(self: *Self, comptime field: []const u8, measurement: u64) void {
@@ -195,7 +171,7 @@ pub fn Benchmark(
                 \\
             , .{
                 field,
-                self.measurements[indexOf(field)].items.len,
+                self.iteration,
                 Nanoseconds{ .data = self.min(field) },
                 Nanoseconds{ .data = self.max(field) },
                 Nanoseconds{ .data = self.mean(field) },
