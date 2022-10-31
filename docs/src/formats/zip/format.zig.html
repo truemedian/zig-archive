@@ -1,0 +1,565 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">    <title>formats/zip/format.zig - source view</title>
+    <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAgklEQVR4AWMYWuD7EllJIM4G4g4g5oIJ/odhOJ8wToOxSTXgNxDHoeiBMfA4+wGShjyYOCkG/IGqWQziEzYAoUAeiF9D5U+DxEg14DRU7jWIT5IBIOdCxf+A+CQZAAoopEB7QJwBCBwHiip8UYmRdrAlDpIMgApwQZNnNii5Dq0MBgCxxycBnwEd+wAAAABJRU5ErkJggg=="/>
+    <style>
+      body{
+        font-family: system-ui, -apple-system, Roboto, "Segoe UI", sans-serif;
+        margin: 0;
+        line-height: 1.5;
+      }
+
+      pre > code {
+        display: block;
+        overflow: auto;
+        line-height: normal;
+        margin: 0em;
+      }
+      .tok-kw {
+          color: #333;
+          font-weight: bold;
+      }
+      .tok-str {
+          color: #d14;
+      }
+      .tok-builtin {
+          color: #005C7A;
+      }
+      .tok-comment {
+          color: #545454;
+          font-style: italic;
+      }
+      .tok-fn {
+          color: #900;
+          font-weight: bold;
+      }
+      .tok-null {
+          color: #005C5C;
+      }
+      .tok-number {
+          color: #005C5C;
+      }
+      .tok-type {
+          color: #458;
+          font-weight: bold;
+      }
+      pre {
+        counter-reset: line;
+      }
+      pre .line:before {
+        counter-increment: line;
+        content: counter(line);
+        display: inline-block;
+        padding-right: 1em;
+        width: 2em;
+        text-align: right;
+        color: #999;
+      }
+      
+      .line {
+        width: 100%;
+        display: inline-block;
+      }
+      .line:target {
+        border-top: 1px solid #ccc;
+        border-bottom: 1px solid #ccc;
+        background: #fafafa;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body{
+            background:#222;
+            color: #ccc;
+        }
+        pre > code {
+            color: #ccc;
+            background: #222;
+            border: unset;
+        }
+        .line:target {
+            border-top: 1px solid #444;
+            border-bottom: 1px solid #444;
+            background: #333;
+        }
+        .tok-kw {
+            color: #eee;
+        }
+        .tok-str {
+            color: #2e5;
+        }
+        .tok-builtin {
+            color: #ff894c;
+        }
+        .tok-comment {
+            color: #aa7;
+        }
+        .tok-fn {
+            color: #B1A0F8;
+        }
+        .tok-null {
+            color: #ff8080;
+        }
+        .tok-number {
+            color: #ff8080;
+        }
+        .tok-type {
+            color: #68f;
+        }
+      }
+    </style>
+</head>
+<body>
+<pre><code><span class="line" id="L1"><span class="tok-kw">const</span> std = <span class="tok-builtin">@import</span>(<span class="tok-str">&quot;std&quot;</span>);</span>
+<span class="line" id="L2"></span>
+<span class="line" id="L3"><span class="tok-kw">const</span> mem = std.mem;</span>
+<span class="line" id="L4"></span>
+<span class="line" id="L5"><span class="tok-comment">// Add more methods as they're supported</span>
+</span>
+<span class="line" id="L6"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> CompressionMethod = <span class="tok-kw">enum</span>(<span class="tok-type">u16</span>) {</span>
+<span class="line" id="L7">    none = <span class="tok-number">0</span>,</span>
+<span class="line" id="L8">    deflated = <span class="tok-number">8</span>,</span>
+<span class="line" id="L9">    enhanced_deflated,</span>
+<span class="line" id="L10">    _,</span>
+<span class="line" id="L11">};</span>
+<span class="line" id="L12"></span>
+<span class="line" id="L13"><span class="tok-kw">const</span> Crc32Poly = <span class="tok-builtin">@intToEnum</span>(std.hash.crc.Polynomial, <span class="tok-number">0xEDB88320</span>);</span>
+<span class="line" id="L14"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> Crc32 = std.hash.crc.Crc32WithPoly(Crc32Poly);</span>
+<span class="line" id="L15"></span>
+<span class="line" id="L16"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> Version = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L17">    <span class="tok-kw">pub</span> <span class="tok-kw">const</span> Vendor = <span class="tok-kw">enum</span>(<span class="tok-type">u8</span>) {</span>
+<span class="line" id="L18">        dos = <span class="tok-number">0</span>,</span>
+<span class="line" id="L19">        amiga,</span>
+<span class="line" id="L20">        openvms,</span>
+<span class="line" id="L21">        unix,</span>
+<span class="line" id="L22">        vm,</span>
+<span class="line" id="L23">        atari,</span>
+<span class="line" id="L24">        os2_hpfs,</span>
+<span class="line" id="L25">        macintosh,</span>
+<span class="line" id="L26">        z_system,</span>
+<span class="line" id="L27">        cp_m,</span>
+<span class="line" id="L28">        ntfs,</span>
+<span class="line" id="L29">        mvs,</span>
+<span class="line" id="L30">        vse,</span>
+<span class="line" id="L31">        acorn,</span>
+<span class="line" id="L32">        vfat,</span>
+<span class="line" id="L33">        alt_mvs,</span>
+<span class="line" id="L34">        beos,</span>
+<span class="line" id="L35">        tandem,</span>
+<span class="line" id="L36">        os400,</span>
+<span class="line" id="L37">        osx,</span>
+<span class="line" id="L38">        _,</span>
+<span class="line" id="L39">    };</span>
+<span class="line" id="L40"></span>
+<span class="line" id="L41">    vendor: Vendor,</span>
+<span class="line" id="L42">    major: <span class="tok-type">u8</span>,</span>
+<span class="line" id="L43">    minor: <span class="tok-type">u8</span>,</span>
+<span class="line" id="L44"></span>
+<span class="line" id="L45">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(entry: <span class="tok-type">u16</span>) Version {</span>
+<span class="line" id="L46">        <span class="tok-kw">var</span> ver: Version = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L47"></span>
+<span class="line" id="L48">        ver.major = <span class="tok-builtin">@truncate</span>(<span class="tok-type">u8</span>, entry) / <span class="tok-number">10</span>;</span>
+<span class="line" id="L49">        ver.minor = <span class="tok-builtin">@truncate</span>(<span class="tok-type">u8</span>, entry) % <span class="tok-number">10</span>;</span>
+<span class="line" id="L50">        ver.vendor = <span class="tok-builtin">@intToEnum</span>(Vendor, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u8</span>, entry &gt;&gt; <span class="tok-number">8</span>));</span>
+<span class="line" id="L51"></span>
+<span class="line" id="L52">        <span class="tok-kw">return</span> ver;</span>
+<span class="line" id="L53">    }</span>
+<span class="line" id="L54"></span>
+<span class="line" id="L55">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: Version) <span class="tok-type">u16</span> {</span>
+<span class="line" id="L56">        <span class="tok-kw">const</span> version = <span class="tok-builtin">@as</span>(<span class="tok-type">u16</span>, self.major * <span class="tok-number">10</span> + self.minor);</span>
+<span class="line" id="L57">        <span class="tok-kw">const</span> vendor = <span class="tok-builtin">@as</span>(<span class="tok-type">u16</span>, <span class="tok-builtin">@enumToInt</span>(self.vendor)) &lt;&lt; <span class="tok-number">8</span>;</span>
+<span class="line" id="L58"></span>
+<span class="line" id="L59">        <span class="tok-kw">return</span> version | vendor;</span>
+<span class="line" id="L60">    }</span>
+<span class="line" id="L61"></span>
+<span class="line" id="L62">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">check</span>(self: Version) <span class="tok-type">bool</span> {</span>
+<span class="line" id="L63">        <span class="tok-kw">if</span> (self.major &lt; <span class="tok-number">4</span>) {</span>
+<span class="line" id="L64">            <span class="tok-kw">return</span> <span class="tok-null">true</span>;</span>
+<span class="line" id="L65">        } <span class="tok-kw">else</span> <span class="tok-kw">if</span> (self.major == <span class="tok-number">4</span> <span class="tok-kw">and</span> self.minor &lt;= <span class="tok-number">5</span>) {</span>
+<span class="line" id="L66">            <span class="tok-kw">return</span> <span class="tok-null">true</span>;</span>
+<span class="line" id="L67">        } <span class="tok-kw">else</span> {</span>
+<span class="line" id="L68">            <span class="tok-kw">return</span> <span class="tok-null">false</span>;</span>
+<span class="line" id="L69">        }</span>
+<span class="line" id="L70">    }</span>
+<span class="line" id="L71">};</span>
+<span class="line" id="L72"></span>
+<span class="line" id="L73"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> GeneralPurposeBitFlag = <span class="tok-kw">packed</span> <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L74">    encrypted: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L75">    compression1: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L76">    compression2: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L77">    data_descriptor: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L78">    enhanced_deflation: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L79">    compressed_patched: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L80">    strong_encryption: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L81">    __7_reserved: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L82">    __8_reserved: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L83">    __9_reserved: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L84">    __10_reserved: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L85">    is_utf8: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L86">    __12_reserved: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L87">    mask_headers: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L88">    __14_reserved: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L89">    __15_reserved: <span class="tok-type">u1</span>,</span>
+<span class="line" id="L90"></span>
+<span class="line" id="L91">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(entry: <span class="tok-type">u16</span>) GeneralPurposeBitFlag {</span>
+<span class="line" id="L92">        <span class="tok-kw">return</span> <span class="tok-builtin">@bitCast</span>(GeneralPurposeBitFlag, entry);</span>
+<span class="line" id="L93">    }</span>
+<span class="line" id="L94"></span>
+<span class="line" id="L95">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: GeneralPurposeBitFlag) <span class="tok-type">u16</span> {</span>
+<span class="line" id="L96">        <span class="tok-kw">return</span> <span class="tok-builtin">@bitCast</span>(<span class="tok-type">u16</span>, self);</span>
+<span class="line" id="L97">    }</span>
+<span class="line" id="L98">};</span>
+<span class="line" id="L99"></span>
+<span class="line" id="L100"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> DosTimestamp = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L101">    second: <span class="tok-type">u6</span>,</span>
+<span class="line" id="L102">    minute: <span class="tok-type">u6</span>,</span>
+<span class="line" id="L103">    hour: <span class="tok-type">u5</span>,</span>
+<span class="line" id="L104">    day: <span class="tok-type">u5</span>,</span>
+<span class="line" id="L105">    month: <span class="tok-type">u4</span>,</span>
+<span class="line" id="L106">    year: <span class="tok-type">u12</span>,</span>
+<span class="line" id="L107"></span>
+<span class="line" id="L108">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(entry: [<span class="tok-number">2</span>]<span class="tok-type">u16</span>) DosTimestamp {</span>
+<span class="line" id="L109">        <span class="tok-kw">var</span> self: DosTimestamp = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L110"></span>
+<span class="line" id="L111">        self.second = <span class="tok-builtin">@as</span>(<span class="tok-type">u6</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u5</span>, entry[<span class="tok-number">0</span>])) &lt;&lt; <span class="tok-number">1</span>;</span>
+<span class="line" id="L112">        self.minute = <span class="tok-builtin">@truncate</span>(<span class="tok-type">u6</span>, entry[<span class="tok-number">0</span>] &gt;&gt; <span class="tok-number">5</span>);</span>
+<span class="line" id="L113">        self.hour = <span class="tok-builtin">@truncate</span>(<span class="tok-type">u5</span>, entry[<span class="tok-number">0</span>] &gt;&gt; <span class="tok-number">11</span>);</span>
+<span class="line" id="L114"></span>
+<span class="line" id="L115">        self.day = <span class="tok-builtin">@truncate</span>(<span class="tok-type">u5</span>, entry[<span class="tok-number">1</span>]);</span>
+<span class="line" id="L116">        self.month = <span class="tok-builtin">@truncate</span>(<span class="tok-type">u4</span>, entry[<span class="tok-number">1</span>] &gt;&gt; <span class="tok-number">5</span>);</span>
+<span class="line" id="L117">        self.year = <span class="tok-builtin">@as</span>(<span class="tok-type">u12</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u7</span>, entry[<span class="tok-number">1</span>] &gt;&gt; <span class="tok-number">9</span>)) + <span class="tok-number">1980</span>;</span>
+<span class="line" id="L118"></span>
+<span class="line" id="L119">        <span class="tok-kw">return</span> self;</span>
+<span class="line" id="L120">    }</span>
+<span class="line" id="L121"></span>
+<span class="line" id="L122">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: DosTimestamp) [<span class="tok-number">2</span>]<span class="tok-type">u16</span> {</span>
+<span class="line" id="L123">        <span class="tok-kw">var</span> buf: [<span class="tok-number">2</span>]<span class="tok-type">u8</span> = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L124"></span>
+<span class="line" id="L125">        <span class="tok-kw">const</span> second = <span class="tok-builtin">@as</span>(<span class="tok-type">u16</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u5</span>, self.second &gt;&gt; <span class="tok-number">1</span>));</span>
+<span class="line" id="L126">        <span class="tok-kw">const</span> minute = <span class="tok-builtin">@as</span>(<span class="tok-type">u16</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u5</span>, self.minute) &lt;&lt; <span class="tok-number">5</span>);</span>
+<span class="line" id="L127">        <span class="tok-kw">const</span> hour = <span class="tok-builtin">@as</span>(<span class="tok-type">u16</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u5</span>, self.hour) &lt;&lt; <span class="tok-number">11</span>);</span>
+<span class="line" id="L128"></span>
+<span class="line" id="L129">        buf[<span class="tok-number">0</span>] = second | minute | hour;</span>
+<span class="line" id="L130"></span>
+<span class="line" id="L131">        <span class="tok-kw">const</span> day = self.day;</span>
+<span class="line" id="L132">        <span class="tok-kw">const</span> month = self.month &lt;&lt; <span class="tok-number">5</span>;</span>
+<span class="line" id="L133">        <span class="tok-kw">const</span> year = (self.year - <span class="tok-number">1980</span>) &lt;&lt; <span class="tok-number">11</span>;</span>
+<span class="line" id="L134"></span>
+<span class="line" id="L135">        buf[<span class="tok-number">1</span>] = day | month | year;</span>
+<span class="line" id="L136"></span>
+<span class="line" id="L137">        <span class="tok-kw">return</span> buf;</span>
+<span class="line" id="L138">    }</span>
+<span class="line" id="L139">};</span>
+<span class="line" id="L140"></span>
+<span class="line" id="L141"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> LocalFileRecord = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L142">    <span class="tok-kw">pub</span> <span class="tok-kw">const</span> signature = <span class="tok-number">0x04034b50</span>;</span>
+<span class="line" id="L143">    <span class="tok-kw">pub</span> <span class="tok-kw">const</span> size = <span class="tok-number">30</span>;</span>
+<span class="line" id="L144"></span>
+<span class="line" id="L145">    signature: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L146">    version: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L147">    flags: GeneralPurposeBitFlag,</span>
+<span class="line" id="L148">    compression_method: CompressionMethod,</span>
+<span class="line" id="L149">    last_mod_time: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L150">    last_mod_date: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L151">    crc32: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L152">    compressed_size: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L153">    uncompressed_size: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L154">    filename_len: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L155">    extra_len: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L156"></span>
+<span class="line" id="L157">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(reader: <span class="tok-kw">anytype</span>) !LocalFileRecord {</span>
+<span class="line" id="L158">        <span class="tok-kw">var</span> self: LocalFileRecord = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L159"></span>
+<span class="line" id="L160">        <span class="tok-kw">var</span> buf: [<span class="tok-number">30</span>]<span class="tok-type">u8</span> = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L161">        <span class="tok-kw">const</span> nread = <span class="tok-kw">try</span> reader.readAll(&amp;buf);</span>
+<span class="line" id="L162">        <span class="tok-kw">if</span> (nread == <span class="tok-number">0</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.EndOfStream;</span>
+<span class="line" id="L163"></span>
+<span class="line" id="L164">        self.signature = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">0</span>..<span class="tok-number">4</span>]);</span>
+<span class="line" id="L165">        <span class="tok-kw">if</span> (self.signature != signature) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.InvalidSignature;</span>
+<span class="line" id="L166"></span>
+<span class="line" id="L167">        self.version = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">4</span>..<span class="tok-number">6</span>]);</span>
+<span class="line" id="L168">        self.flags = <span class="tok-builtin">@bitCast</span>(GeneralPurposeBitFlag, mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">6</span>..<span class="tok-number">8</span>]));</span>
+<span class="line" id="L169">        self.compression_method = <span class="tok-builtin">@intToEnum</span>(CompressionMethod, mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">8</span>..<span class="tok-number">10</span>]));</span>
+<span class="line" id="L170">        self.last_mod_time = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">10</span>..<span class="tok-number">12</span>]);</span>
+<span class="line" id="L171">        self.last_mod_date = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">12</span>..<span class="tok-number">14</span>]);</span>
+<span class="line" id="L172">        self.crc32 = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">14</span>..<span class="tok-number">18</span>]);</span>
+<span class="line" id="L173">        self.compressed_size = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">18</span>..<span class="tok-number">22</span>]);</span>
+<span class="line" id="L174">        self.uncompressed_size = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">22</span>..<span class="tok-number">26</span>]);</span>
+<span class="line" id="L175">        self.filename_len = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">26</span>..<span class="tok-number">28</span>]);</span>
+<span class="line" id="L176">        self.extra_len = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">28</span>..<span class="tok-number">30</span>]);</span>
+<span class="line" id="L177"></span>
+<span class="line" id="L178">        <span class="tok-kw">return</span> self;</span>
+<span class="line" id="L179">    }</span>
+<span class="line" id="L180"></span>
+<span class="line" id="L181">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: LocalFileRecord, writer: <span class="tok-kw">anytype</span>) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L182">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, signature);</span>
+<span class="line" id="L183"></span>
+<span class="line" id="L184">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.version);</span>
+<span class="line" id="L185">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, <span class="tok-builtin">@bitCast</span>(<span class="tok-type">u16</span>, self.flags));</span>
+<span class="line" id="L186">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, <span class="tok-builtin">@enumToInt</span>(self.compression_method));</span>
+<span class="line" id="L187">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.last_mod_time);</span>
+<span class="line" id="L188">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.last_mod_date);</span>
+<span class="line" id="L189">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.crc32);</span>
+<span class="line" id="L190">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.compressed_size);</span>
+<span class="line" id="L191">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.uncompressed_size);</span>
+<span class="line" id="L192">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.filename_len);</span>
+<span class="line" id="L193">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.extra_len);</span>
+<span class="line" id="L194">    }</span>
+<span class="line" id="L195">};</span>
+<span class="line" id="L196"></span>
+<span class="line" id="L197"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> CentralDirectoryRecord = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L198">    <span class="tok-kw">pub</span> <span class="tok-kw">const</span> signature = <span class="tok-number">0x02014b50</span>;</span>
+<span class="line" id="L199"></span>
+<span class="line" id="L200">    version_made: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L201">    version_needed: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L202">    flags: GeneralPurposeBitFlag,</span>
+<span class="line" id="L203">    compression_method: CompressionMethod,</span>
+<span class="line" id="L204">    last_mod_time: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L205">    last_mod_date: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L206">    crc32: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L207">    compressed_size: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L208">    uncompressed_size: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L209">    filename_len: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L210">    extra_len: <span class="tok-type">u16</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L211">    comment_len: <span class="tok-type">u16</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L212">    disk_number_start: <span class="tok-type">u16</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L213">    internal_attributes: <span class="tok-type">u16</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L214">    external_attributes: <span class="tok-type">u32</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L215">    local_offset: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L216"></span>
+<span class="line" id="L217">    filename_idx: <span class="tok-type">usize</span>,</span>
+<span class="line" id="L218"></span>
+<span class="line" id="L219">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(reader: <span class="tok-kw">anytype</span>) !CentralDirectoryRecord {</span>
+<span class="line" id="L220">        <span class="tok-kw">const</span> sig = <span class="tok-kw">try</span> reader.readIntLittle(<span class="tok-type">u32</span>);</span>
+<span class="line" id="L221">        <span class="tok-kw">if</span> (sig != signature) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.InvalidSignature;</span>
+<span class="line" id="L222"></span>
+<span class="line" id="L223">        <span class="tok-kw">var</span> record: CentralDirectoryRecord = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L224"></span>
+<span class="line" id="L225">        <span class="tok-kw">var</span> buf: [<span class="tok-number">42</span>]<span class="tok-type">u8</span> = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L226">        <span class="tok-kw">const</span> nread = <span class="tok-kw">try</span> reader.readAll(&amp;buf);</span>
+<span class="line" id="L227">        <span class="tok-kw">if</span> (nread == <span class="tok-number">0</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.EndOfStream;</span>
+<span class="line" id="L228"></span>
+<span class="line" id="L229">        record.version_made = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">0</span>..<span class="tok-number">2</span>]);</span>
+<span class="line" id="L230">        record.version_needed = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">2</span>..<span class="tok-number">4</span>]);</span>
+<span class="line" id="L231">        record.flags = <span class="tok-builtin">@bitCast</span>(GeneralPurposeBitFlag, mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">4</span>..<span class="tok-number">6</span>]));</span>
+<span class="line" id="L232">        record.compression_method = <span class="tok-builtin">@intToEnum</span>(CompressionMethod, mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">6</span>..<span class="tok-number">8</span>]));</span>
+<span class="line" id="L233">        record.last_mod_time = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">8</span>..<span class="tok-number">10</span>]);</span>
+<span class="line" id="L234">        record.last_mod_date = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">10</span>..<span class="tok-number">12</span>]);</span>
+<span class="line" id="L235">        record.crc32 = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">12</span>..<span class="tok-number">16</span>]);</span>
+<span class="line" id="L236">        record.compressed_size = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">16</span>..<span class="tok-number">20</span>]);</span>
+<span class="line" id="L237">        record.uncompressed_size = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">20</span>..<span class="tok-number">24</span>]);</span>
+<span class="line" id="L238">        record.filename_len = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">24</span>..<span class="tok-number">26</span>]);</span>
+<span class="line" id="L239">        record.extra_len = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">26</span>..<span class="tok-number">28</span>]);</span>
+<span class="line" id="L240">        record.comment_len = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">28</span>..<span class="tok-number">30</span>]);</span>
+<span class="line" id="L241">        record.disk_number_start = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">30</span>..<span class="tok-number">32</span>]);</span>
+<span class="line" id="L242">        record.internal_attributes = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">32</span>..<span class="tok-number">34</span>]);</span>
+<span class="line" id="L243">        record.external_attributes = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">34</span>..<span class="tok-number">38</span>]);</span>
+<span class="line" id="L244">        record.local_offset = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">38</span>..<span class="tok-number">42</span>]);</span>
+<span class="line" id="L245"></span>
+<span class="line" id="L246">        <span class="tok-kw">return</span> record;</span>
+<span class="line" id="L247">    }</span>
+<span class="line" id="L248"></span>
+<span class="line" id="L249">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: CentralDirectoryRecord, writer: <span class="tok-kw">anytype</span>) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L250">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, signature);</span>
+<span class="line" id="L251"></span>
+<span class="line" id="L252">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.version_made);</span>
+<span class="line" id="L253">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.version_needed);</span>
+<span class="line" id="L254">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, <span class="tok-builtin">@bitCast</span>(<span class="tok-type">u16</span>, self.flags));</span>
+<span class="line" id="L255">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, <span class="tok-builtin">@enumToInt</span>(self.compression_method));</span>
+<span class="line" id="L256">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.last_mod_time);</span>
+<span class="line" id="L257">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.last_mod_date);</span>
+<span class="line" id="L258">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.crc32);</span>
+<span class="line" id="L259">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u32</span>, self.compressed_size));</span>
+<span class="line" id="L260">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u32</span>, self.uncompressed_size));</span>
+<span class="line" id="L261">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.filename_len);</span>
+<span class="line" id="L262">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.extra_len);</span>
+<span class="line" id="L263">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.comment_len);</span>
+<span class="line" id="L264">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.disk_number_start);</span>
+<span class="line" id="L265">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.internal_attributes);</span>
+<span class="line" id="L266">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.external_attributes);</span>
+<span class="line" id="L267">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, <span class="tok-builtin">@truncate</span>(<span class="tok-type">u32</span>, self.local_offset));</span>
+<span class="line" id="L268">    }</span>
+<span class="line" id="L269"></span>
+<span class="line" id="L270">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">needs64</span>(self: CentralDirectoryRecord) <span class="tok-type">bool</span> {</span>
+<span class="line" id="L271">        <span class="tok-kw">return</span> self.compressed_size == <span class="tok-number">0xffffffff</span> <span class="tok-kw">or</span></span>
+<span class="line" id="L272">            self.uncompressed_size == <span class="tok-number">0xffffffff</span> <span class="tok-kw">or</span></span>
+<span class="line" id="L273">            self.local_offset == <span class="tok-number">0xffffffff</span>;</span>
+<span class="line" id="L274">    }</span>
+<span class="line" id="L275">};</span>
+<span class="line" id="L276"></span>
+<span class="line" id="L277"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> EndOfCentralDirectory64Record = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L278">    <span class="tok-kw">pub</span> <span class="tok-kw">const</span> signature = <span class="tok-number">0x06064b50</span>;</span>
+<span class="line" id="L279"></span>
+<span class="line" id="L280">    size: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L281">    version_made: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L282">    version_needed: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L283">    disk_number: <span class="tok-type">u32</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L284">    disk_central: <span class="tok-type">u32</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L285">    num_entries_disk: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L286">    num_entries_total: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L287">    directory_size: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L288">    directory_offset: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L289"></span>
+<span class="line" id="L290">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(reader: <span class="tok-kw">anytype</span>) !EndOfCentralDirectory64Record {</span>
+<span class="line" id="L291">        <span class="tok-kw">const</span> sig = <span class="tok-kw">try</span> reader.readIntLittle(<span class="tok-type">u32</span>);</span>
+<span class="line" id="L292">        <span class="tok-kw">if</span> (sig != signature) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.InvalidSignature;</span>
+<span class="line" id="L293"></span>
+<span class="line" id="L294">        <span class="tok-kw">var</span> record: EndOfCentralDirectory64Record = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L295"></span>
+<span class="line" id="L296">        <span class="tok-kw">var</span> buf: [<span class="tok-number">52</span>]<span class="tok-type">u8</span> = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L297">        <span class="tok-kw">const</span> nread = <span class="tok-kw">try</span> reader.readAll(&amp;buf);</span>
+<span class="line" id="L298">        <span class="tok-kw">if</span> (nread == <span class="tok-number">0</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.EndOfStream;</span>
+<span class="line" id="L299"></span>
+<span class="line" id="L300">        record.size = mem.readIntLittle(<span class="tok-type">u64</span>, buf[<span class="tok-number">0</span>..<span class="tok-number">8</span>]);</span>
+<span class="line" id="L301">        record.version_made = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">8</span>..<span class="tok-number">10</span>]);</span>
+<span class="line" id="L302">        record.version_needed = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">10</span>..<span class="tok-number">12</span>]);</span>
+<span class="line" id="L303">        record.disk_number = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">12</span>..<span class="tok-number">16</span>]);</span>
+<span class="line" id="L304">        record.disk_central = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">16</span>..<span class="tok-number">20</span>]);</span>
+<span class="line" id="L305">        record.num_entries_disk = mem.readIntLittle(<span class="tok-type">u64</span>, buf[<span class="tok-number">20</span>..<span class="tok-number">28</span>]);</span>
+<span class="line" id="L306">        record.num_entries_total = mem.readIntLittle(<span class="tok-type">u64</span>, buf[<span class="tok-number">28</span>..<span class="tok-number">36</span>]);</span>
+<span class="line" id="L307">        record.directory_size = mem.readIntLittle(<span class="tok-type">u64</span>, buf[<span class="tok-number">36</span>..<span class="tok-number">44</span>]);</span>
+<span class="line" id="L308">        record.directory_offset = mem.readIntLittle(<span class="tok-type">u64</span>, buf[<span class="tok-number">44</span>..<span class="tok-number">52</span>]);</span>
+<span class="line" id="L309"></span>
+<span class="line" id="L310">        <span class="tok-kw">return</span> record;</span>
+<span class="line" id="L311">    }</span>
+<span class="line" id="L312"></span>
+<span class="line" id="L313">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: EndOfCentralDirectory64Record, writer: <span class="tok-kw">anytype</span>) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L314">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, signature);</span>
+<span class="line" id="L315">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, self.size);</span>
+<span class="line" id="L316">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.version_made);</span>
+<span class="line" id="L317">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.version_needed);</span>
+<span class="line" id="L318">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.disk_number);</span>
+<span class="line" id="L319">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.disk_central);</span>
+<span class="line" id="L320">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, self.num_entries_disk);</span>
+<span class="line" id="L321">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, self.num_entries_total);</span>
+<span class="line" id="L322">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, self.directory_size);</span>
+<span class="line" id="L323">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, self.directory_offset);</span>
+<span class="line" id="L324">    }</span>
+<span class="line" id="L325">};</span>
+<span class="line" id="L326"></span>
+<span class="line" id="L327"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> EndOfCentralDirectory64Locator = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L328">    <span class="tok-kw">pub</span> <span class="tok-kw">const</span> signature = <span class="tok-number">0x07064b50</span>;</span>
+<span class="line" id="L329"></span>
+<span class="line" id="L330">    disk_number: <span class="tok-type">u32</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L331">    offset: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L332">    num_disks: <span class="tok-type">u32</span> = <span class="tok-number">1</span>,</span>
+<span class="line" id="L333"></span>
+<span class="line" id="L334">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(reader: <span class="tok-kw">anytype</span>) !EndOfCentralDirectory64Locator {</span>
+<span class="line" id="L335">        <span class="tok-comment">// signature is consumed by the search algorithm</span>
+</span>
+<span class="line" id="L336"></span>
+<span class="line" id="L337">        <span class="tok-kw">var</span> locator: EndOfCentralDirectory64Locator = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L338"></span>
+<span class="line" id="L339">        <span class="tok-kw">var</span> buf: [<span class="tok-number">16</span>]<span class="tok-type">u8</span> = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L340">        <span class="tok-kw">const</span> nread = <span class="tok-kw">try</span> reader.readAll(&amp;buf);</span>
+<span class="line" id="L341">        <span class="tok-kw">if</span> (nread == <span class="tok-number">0</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.EndOfStream;</span>
+<span class="line" id="L342"></span>
+<span class="line" id="L343">        locator.disk_number = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">0</span>..<span class="tok-number">4</span>]);</span>
+<span class="line" id="L344">        locator.offset = mem.readIntLittle(<span class="tok-type">u64</span>, buf[<span class="tok-number">4</span>..<span class="tok-number">12</span>]);</span>
+<span class="line" id="L345">        locator.num_disks = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">12</span>..<span class="tok-number">16</span>]);</span>
+<span class="line" id="L346"></span>
+<span class="line" id="L347">        <span class="tok-kw">return</span> locator;</span>
+<span class="line" id="L348">    }</span>
+<span class="line" id="L349"></span>
+<span class="line" id="L350">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: EndOfCentralDirectory64Locator, writer: <span class="tok-kw">anytype</span>) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L351">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, signature);</span>
+<span class="line" id="L352">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.disk_number);</span>
+<span class="line" id="L353">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, self.offset);</span>
+<span class="line" id="L354">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.num_disks);</span>
+<span class="line" id="L355">    }</span>
+<span class="line" id="L356">};</span>
+<span class="line" id="L357"></span>
+<span class="line" id="L358"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> EndOfCentralDirectoryRecord = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L359">    <span class="tok-kw">pub</span> <span class="tok-kw">const</span> signature = <span class="tok-number">0x06054b50</span>;</span>
+<span class="line" id="L360"></span>
+<span class="line" id="L361">    disk_number: <span class="tok-type">u16</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L362">    disk_central: <span class="tok-type">u16</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L363">    entries_on_disk: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L364">    entries_total: <span class="tok-type">u16</span>,</span>
+<span class="line" id="L365">    directory_size: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L366">    directory_offset: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L367">    comment_length: <span class="tok-type">u16</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L368"></span>
+<span class="line" id="L369">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(reader: <span class="tok-kw">anytype</span>) !EndOfCentralDirectoryRecord {</span>
+<span class="line" id="L370">        <span class="tok-comment">// signature is consumed by the search algorithm</span>
+</span>
+<span class="line" id="L371"></span>
+<span class="line" id="L372">        <span class="tok-kw">var</span> record: EndOfCentralDirectoryRecord = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L373"></span>
+<span class="line" id="L374">        <span class="tok-kw">var</span> buf: [<span class="tok-number">18</span>]<span class="tok-type">u8</span> = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L375">        <span class="tok-kw">const</span> nread = <span class="tok-kw">try</span> reader.readAll(&amp;buf);</span>
+<span class="line" id="L376">        <span class="tok-kw">if</span> (nread == <span class="tok-number">0</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.EndOfStream;</span>
+<span class="line" id="L377"></span>
+<span class="line" id="L378">        record.disk_number = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">0</span>..<span class="tok-number">2</span>]);</span>
+<span class="line" id="L379">        record.disk_central = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">2</span>..<span class="tok-number">4</span>]);</span>
+<span class="line" id="L380">        record.entries_on_disk = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">4</span>..<span class="tok-number">6</span>]);</span>
+<span class="line" id="L381">        record.entries_total = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">6</span>..<span class="tok-number">8</span>]);</span>
+<span class="line" id="L382">        record.directory_size = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">8</span>..<span class="tok-number">12</span>]);</span>
+<span class="line" id="L383">        record.directory_offset = mem.readIntLittle(<span class="tok-type">u32</span>, buf[<span class="tok-number">12</span>..<span class="tok-number">16</span>]);</span>
+<span class="line" id="L384">        record.comment_length = mem.readIntLittle(<span class="tok-type">u16</span>, buf[<span class="tok-number">16</span>..<span class="tok-number">18</span>]);</span>
+<span class="line" id="L385"></span>
+<span class="line" id="L386">        <span class="tok-kw">return</span> record;</span>
+<span class="line" id="L387">    }</span>
+<span class="line" id="L388"></span>
+<span class="line" id="L389">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: EndOfCentralDirectoryRecord, writer: <span class="tok-kw">anytype</span>) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L390">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, signature);</span>
+<span class="line" id="L391">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.disk_number);</span>
+<span class="line" id="L392">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.disk_central);</span>
+<span class="line" id="L393">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.entries_on_disk);</span>
+<span class="line" id="L394">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.entries_total);</span>
+<span class="line" id="L395">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.directory_size);</span>
+<span class="line" id="L396">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u32</span>, self.directory_offset);</span>
+<span class="line" id="L397">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.comment_length);</span>
+<span class="line" id="L398">    }</span>
+<span class="line" id="L399"></span>
+<span class="line" id="L400">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">needs64</span>(self: EndOfCentralDirectoryRecord) <span class="tok-type">bool</span> {</span>
+<span class="line" id="L401">        <span class="tok-kw">return</span> self.directory_size == <span class="tok-number">0xffffffff</span> <span class="tok-kw">or</span></span>
+<span class="line" id="L402">            self.directory_offset == <span class="tok-number">0xffffffff</span> <span class="tok-kw">or</span></span>
+<span class="line" id="L403">            self.entries_total == <span class="tok-number">0xffff</span>;</span>
+<span class="line" id="L404">    }</span>
+<span class="line" id="L405">};</span>
+<span class="line" id="L406"></span>
+<span class="line" id="L407"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> ExtraFieldZip64 = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L408">    uncompressed: ?<span class="tok-type">u64</span> = <span class="tok-null">null</span>,</span>
+<span class="line" id="L409">    compressed: ?<span class="tok-type">u64</span> = <span class="tok-null">null</span>,</span>
+<span class="line" id="L410">    offset: ?<span class="tok-type">u64</span> = <span class="tok-null">null</span>,</span>
+<span class="line" id="L411"></span>
+<span class="line" id="L412">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">present</span>(self: ExtraFieldZip64) <span class="tok-type">bool</span> {</span>
+<span class="line" id="L413">        <span class="tok-kw">return</span> !(self.uncompressed == <span class="tok-null">null</span> <span class="tok-kw">and</span> self.compressed == <span class="tok-null">null</span> <span class="tok-kw">and</span> self.offset == <span class="tok-null">null</span>);</span>
+<span class="line" id="L414">    }</span>
+<span class="line" id="L415"></span>
+<span class="line" id="L416">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">length</span>(self: ExtraFieldZip64) <span class="tok-type">u16</span> {</span>
+<span class="line" id="L417">        <span class="tok-kw">if</span> (!self.present()) <span class="tok-kw">return</span> <span class="tok-number">0</span>;</span>
+<span class="line" id="L418"></span>
+<span class="line" id="L419">        <span class="tok-kw">var</span> size: <span class="tok-type">u16</span> = <span class="tok-number">4</span>;</span>
+<span class="line" id="L420"></span>
+<span class="line" id="L421">        <span class="tok-kw">if</span> (self.uncompressed != <span class="tok-null">null</span>) size += <span class="tok-number">8</span>;</span>
+<span class="line" id="L422">        <span class="tok-kw">if</span> (self.compressed != <span class="tok-null">null</span>) size += <span class="tok-number">8</span>;</span>
+<span class="line" id="L423">        <span class="tok-kw">if</span> (self.offset != <span class="tok-null">null</span>) size += <span class="tok-number">8</span>;</span>
+<span class="line" id="L424"></span>
+<span class="line" id="L425">        <span class="tok-kw">return</span> size;</span>
+<span class="line" id="L426">    }</span>
+<span class="line" id="L427"></span>
+<span class="line" id="L428">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">write</span>(self: ExtraFieldZip64, writer: <span class="tok-kw">anytype</span>) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L429">        <span class="tok-kw">if</span> (!self.present()) <span class="tok-kw">return</span>;</span>
+<span class="line" id="L430"></span>
+<span class="line" id="L431">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, <span class="tok-number">0x0001</span>);</span>
+<span class="line" id="L432">        <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u16</span>, self.length() - <span class="tok-number">4</span>);</span>
+<span class="line" id="L433"></span>
+<span class="line" id="L434">        <span class="tok-kw">if</span> (self.uncompressed) |num| {</span>
+<span class="line" id="L435">            <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, num);</span>
+<span class="line" id="L436">        }</span>
+<span class="line" id="L437"></span>
+<span class="line" id="L438">        <span class="tok-kw">if</span> (self.compressed) |num| {</span>
+<span class="line" id="L439">            <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, num);</span>
+<span class="line" id="L440">        }</span>
+<span class="line" id="L441"></span>
+<span class="line" id="L442">        <span class="tok-kw">if</span> (self.offset) |num| {</span>
+<span class="line" id="L443">            <span class="tok-kw">try</span> writer.writeIntLittle(<span class="tok-type">u64</span>, num);</span>
+<span class="line" id="L444">        }</span>
+<span class="line" id="L445">    }</span>
+<span class="line" id="L446">};</span>
+<span class="line" id="L447"></span>
+</code></pre></body>
+</html>

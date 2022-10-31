@@ -22,6 +22,11 @@ pub fn build(b: *Builder) void {
     const lib_tests_step = b.step("test", "Run all library tests");
     lib_tests_step.dependOn(&lib_tests.step);
 
+    const docs = b.option(bool, "emit_docs", "Build library documentation") orelse false;
+
+    if (docs)
+        lib_tests.emit_docs = .emit;
+
     // Test Runners
 
     inline for (tests) |file| {
@@ -37,6 +42,7 @@ pub fn build(b: *Builder) void {
         const run_tests = b.step(file, "Run tests");
         run_tests.dependOn(&run_zip_runner.step);
     }
+
     // Benchmarks
 
     const preallocate = b.option(bool, "preallocate", "Allocate the file into memory rather than reading from disk [true].") orelse true;

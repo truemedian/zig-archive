@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">    <title>formats/zip/reader.zig - source view</title>
+    <link rel="icon" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAYAAAAf8/9hAAAAgklEQVR4AWMYWuD7EllJIM4G4g4g5oIJ/odhOJ8wToOxSTXgNxDHoeiBMfA4+wGShjyYOCkG/IGqWQziEzYAoUAeiF9D5U+DxEg14DRU7jWIT5IBIOdCxf+A+CQZAAoopEB7QJwBCBwHiip8UYmRdrAlDpIMgApwQZNnNii5Dq0MBgCxxycBnwEd+wAAAABJRU5ErkJggg=="/>
+    <style>
+      body{
+        font-family: system-ui, -apple-system, Roboto, "Segoe UI", sans-serif;
+        margin: 0;
+        line-height: 1.5;
+      }
+
+      pre > code {
+        display: block;
+        overflow: auto;
+        line-height: normal;
+        margin: 0em;
+      }
+      .tok-kw {
+          color: #333;
+          font-weight: bold;
+      }
+      .tok-str {
+          color: #d14;
+      }
+      .tok-builtin {
+          color: #005C7A;
+      }
+      .tok-comment {
+          color: #545454;
+          font-style: italic;
+      }
+      .tok-fn {
+          color: #900;
+          font-weight: bold;
+      }
+      .tok-null {
+          color: #005C5C;
+      }
+      .tok-number {
+          color: #005C5C;
+      }
+      .tok-type {
+          color: #458;
+          font-weight: bold;
+      }
+      pre {
+        counter-reset: line;
+      }
+      pre .line:before {
+        counter-increment: line;
+        content: counter(line);
+        display: inline-block;
+        padding-right: 1em;
+        width: 2em;
+        text-align: right;
+        color: #999;
+      }
+      
+      .line {
+        width: 100%;
+        display: inline-block;
+      }
+      .line:target {
+        border-top: 1px solid #ccc;
+        border-bottom: 1px solid #ccc;
+        background: #fafafa;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        body{
+            background:#222;
+            color: #ccc;
+        }
+        pre > code {
+            color: #ccc;
+            background: #222;
+            border: unset;
+        }
+        .line:target {
+            border-top: 1px solid #444;
+            border-bottom: 1px solid #444;
+            background: #333;
+        }
+        .tok-kw {
+            color: #eee;
+        }
+        .tok-str {
+            color: #2e5;
+        }
+        .tok-builtin {
+            color: #ff894c;
+        }
+        .tok-comment {
+            color: #aa7;
+        }
+        .tok-fn {
+            color: #B1A0F8;
+        }
+        .tok-null {
+            color: #ff8080;
+        }
+        .tok-number {
+            color: #ff8080;
+        }
+        .tok-type {
+            color: #68f;
+        }
+      }
+    </style>
+</head>
+<body>
+<pre><code><span class="line" id="L1"><span class="tok-kw">const</span> std = <span class="tok-builtin">@import</span>(<span class="tok-str">&quot;std&quot;</span>);</span>
+<span class="line" id="L2"></span>
+<span class="line" id="L3"><span class="tok-kw">const</span> math = std.math;</span>
+<span class="line" id="L4"><span class="tok-kw">const</span> ascii = std.ascii;</span>
+<span class="line" id="L5"><span class="tok-kw">const</span> deflate = std.compress.deflate;</span>
+<span class="line" id="L6"></span>
+<span class="line" id="L7"><span class="tok-kw">const</span> hashing_util = <span class="tok-builtin">@import</span>(<span class="tok-str">&quot;../../hashing.zig&quot;</span>);</span>
+<span class="line" id="L8"><span class="tok-kw">const</span> HashingWriter = hashing_util.HashingWriter;</span>
+<span class="line" id="L9"></span>
+<span class="line" id="L10"><span class="tok-kw">const</span> BufferedSeekableSource = <span class="tok-builtin">@import</span>(<span class="tok-str">&quot;../../seekable_buffered_stream.zig&quot;</span>).mixin(</span>
+<span class="line" id="L11">    std.io.StreamSource.Reader,</span>
+<span class="line" id="L12">    std.io.StreamSource.SeekableStream,</span>
+<span class="line" id="L13">);</span>
+<span class="line" id="L14"></span>
+<span class="line" id="L15"><span class="tok-kw">const</span> format = <span class="tok-builtin">@import</span>(<span class="tok-str">&quot;format.zig&quot;</span>);</span>
+<span class="line" id="L16"></span>
+<span class="line" id="L17"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> CentralDirectoryHeader = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L18">    version_made: format.Version,</span>
+<span class="line" id="L19">    version_needed: format.Version,</span>
+<span class="line" id="L20">    flags: format.GeneralPurposeBitFlag,</span>
+<span class="line" id="L21">    compression_method: format.CompressionMethod,</span>
+<span class="line" id="L22">    last_mod: format.DosTimestamp,</span>
+<span class="line" id="L23"></span>
+<span class="line" id="L24">    crc32: <span class="tok-type">u32</span>,</span>
+<span class="line" id="L25">    compressed_size: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L26">    uncompressed_size: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L27"></span>
+<span class="line" id="L28">    filename: []<span class="tok-kw">const</span> <span class="tok-type">u8</span>,</span>
+<span class="line" id="L29">    offset: <span class="tok-type">u64</span>,</span>
+<span class="line" id="L30"></span>
+<span class="line" id="L31">    <span class="tok-kw">fn</span> <span class="tok-fn">read</span>(archive: ArchiveReader, rec: format.CentralDirectoryRecord) CentralDirectoryHeader {</span>
+<span class="line" id="L32">        <span class="tok-kw">var</span> header: CentralDirectoryHeader = <span class="tok-null">undefined</span>;</span>
+<span class="line" id="L33"></span>
+<span class="line" id="L34">        header.version_made = format.Version.read(rec.version_made);</span>
+<span class="line" id="L35">        header.version_needed = format.Version.read(rec.version_needed);</span>
+<span class="line" id="L36">        header.flags = rec.flags;</span>
+<span class="line" id="L37">        header.compression_method = rec.compression_method;</span>
+<span class="line" id="L38">        header.last_mod = format.DosTimestamp.read(.{ rec.last_mod_time, rec.last_mod_date });</span>
+<span class="line" id="L39"></span>
+<span class="line" id="L40">        header.crc32 = rec.crc32;</span>
+<span class="line" id="L41">        header.compressed_size = rec.compressed_size;</span>
+<span class="line" id="L42">        header.uncompressed_size = rec.uncompressed_size;</span>
+<span class="line" id="L43"></span>
+<span class="line" id="L44">        header.filename = archive.readFilename(rec);</span>
+<span class="line" id="L45">        header.offset = rec.local_offset;</span>
+<span class="line" id="L46"></span>
+<span class="line" id="L47">        <span class="tok-kw">return</span> header;</span>
+<span class="line" id="L48">    }</span>
+<span class="line" id="L49">};</span>
+<span class="line" id="L50"></span>
+<span class="line" id="L51"><span class="tok-kw">fn</span> <span class="tok-fn">lessThanCentralDirectoryRecord</span>(buf: []<span class="tok-kw">const</span> <span class="tok-type">u8</span>, a: format.CentralDirectoryRecord, b: format.CentralDirectoryRecord) <span class="tok-type">bool</span> {</span>
+<span class="line" id="L52">    <span class="tok-kw">const</span> a_name = buf[a.filename_idx..][<span class="tok-number">0</span>..a.filename_len];</span>
+<span class="line" id="L53">    <span class="tok-kw">const</span> b_name = buf[b.filename_idx..][<span class="tok-number">0</span>..b.filename_len];</span>
+<span class="line" id="L54"></span>
+<span class="line" id="L55">    <span class="tok-kw">for</span> (a_name) |a_ch, i| {</span>
+<span class="line" id="L56">        <span class="tok-kw">if</span> (i == b_name.len) <span class="tok-kw">return</span> <span class="tok-null">false</span>;</span>
+<span class="line" id="L57"></span>
+<span class="line" id="L58">        <span class="tok-kw">const</span> b_ch = b_name[i];</span>
+<span class="line" id="L59">        <span class="tok-kw">if</span> (a_ch == <span class="tok-str">'/'</span> <span class="tok-kw">and</span> b_ch != <span class="tok-str">'/'</span>) <span class="tok-kw">return</span> <span class="tok-null">true</span>;</span>
+<span class="line" id="L60">        <span class="tok-kw">if</span> (a_ch != <span class="tok-str">'/'</span> <span class="tok-kw">and</span> b_ch == <span class="tok-str">'/'</span>) <span class="tok-kw">return</span> <span class="tok-null">false</span>;</span>
+<span class="line" id="L61"></span>
+<span class="line" id="L62">        <span class="tok-kw">switch</span> (math.order(ascii.toLower(a_ch), ascii.toLower(b_ch))) {</span>
+<span class="line" id="L63">            .lt =&gt; <span class="tok-kw">return</span> <span class="tok-null">true</span>,</span>
+<span class="line" id="L64">            .gt =&gt; <span class="tok-kw">return</span> <span class="tok-null">false</span>,</span>
+<span class="line" id="L65">            .eq =&gt; <span class="tok-kw">continue</span>,</span>
+<span class="line" id="L66">        }</span>
+<span class="line" id="L67">    }</span>
+<span class="line" id="L68"></span>
+<span class="line" id="L69">    <span class="tok-comment">// we just need something consistent here, this shouldn't be possible</span>
+</span>
+<span class="line" id="L70">    <span class="tok-kw">return</span> a.local_offset &lt; b.local_offset;</span>
+<span class="line" id="L71">}</span>
+<span class="line" id="L72"></span>
+<span class="line" id="L73"><span class="tok-kw">pub</span> <span class="tok-kw">const</span> ArchiveReader = <span class="tok-kw">struct</span> {</span>
+<span class="line" id="L74">    source: *std.io.StreamSource,</span>
+<span class="line" id="L75"></span>
+<span class="line" id="L76">    directory: std.ArrayListUnmanaged(format.CentralDirectoryRecord) = .{},</span>
+<span class="line" id="L77">    start_offset: <span class="tok-type">u64</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L78"></span>
+<span class="line" id="L79">    filename_buf: std.ArrayListUnmanaged(<span class="tok-type">u8</span>) = .{},</span>
+<span class="line" id="L80"></span>
+<span class="line" id="L81">    directory_offset: <span class="tok-type">u64</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L82">    directory_size: <span class="tok-type">u64</span> = <span class="tok-number">0</span>,</span>
+<span class="line" id="L83"></span>
+<span class="line" id="L84">    allocator: std.mem.Allocator,</span>
+<span class="line" id="L85"></span>
+<span class="line" id="L86">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">init</span>(allocator: std.mem.Allocator, source: *std.io.StreamSource) ArchiveReader {</span>
+<span class="line" id="L87">        <span class="tok-kw">return</span> .{</span>
+<span class="line" id="L88">            .allocator = allocator,</span>
+<span class="line" id="L89">            .source = source,</span>
+<span class="line" id="L90">        };</span>
+<span class="line" id="L91">    }</span>
+<span class="line" id="L92"></span>
+<span class="line" id="L93">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">deinit</span>(self: *ArchiveReader) <span class="tok-type">void</span> {</span>
+<span class="line" id="L94">        self.directory.deinit(self.allocator);</span>
+<span class="line" id="L95">        self.filename_buf.deinit(self.allocator);</span>
+<span class="line" id="L96">    }</span>
+<span class="line" id="L97"></span>
+<span class="line" id="L98">    <span class="tok-comment">/// Finds and reads the zip central directory. Expects a correct zip file.</span></span>
+<span class="line" id="L99">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">load</span>(self: *ArchiveReader) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L100">        <span class="tok-kw">const</span> reader = self.source.reader();</span>
+<span class="line" id="L101">        <span class="tok-kw">const</span> seeker = self.source.seekableStream();</span>
+<span class="line" id="L102"></span>
+<span class="line" id="L103">        <span class="tok-comment">// theres no neat way to iterate backwards quickly, but buffering helps</span>
+</span>
+<span class="line" id="L104">        <span class="tok-kw">const</span> buf = <span class="tok-kw">try</span> self.allocator.alloc(<span class="tok-type">u8</span>, <span class="tok-number">1024</span>);</span>
+<span class="line" id="L105">        <span class="tok-kw">defer</span> self.allocator.free(buf);</span>
+<span class="line" id="L106"></span>
+<span class="line" id="L107">        <span class="tok-kw">try</span> seeker.seekTo(<span class="tok-kw">try</span> seeker.getEndPos());</span>
+<span class="line" id="L108"></span>
+<span class="line" id="L109">        <span class="tok-comment">// Search from the end of the file to find the end of central directory record</span>
+</span>
+<span class="line" id="L110"></span>
+<span class="line" id="L111">        <span class="tok-kw">var</span> eocd_offset: <span class="tok-type">usize</span> = <span class="tok-number">0</span>;</span>
+<span class="line" id="L112">        find_eocd: <span class="tok-kw">while</span> (<span class="tok-null">true</span>) {</span>
+<span class="line" id="L113">            <span class="tok-kw">if</span> ((<span class="tok-kw">try</span> seeker.getPos()) == <span class="tok-number">0</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.NotAnArchive;</span>
+<span class="line" id="L114">            <span class="tok-kw">try</span> seeker.seekBy(-<span class="tok-number">1021</span>);</span>
+<span class="line" id="L115"></span>
+<span class="line" id="L116">            <span class="tok-kw">const</span> read = <span class="tok-kw">try</span> reader.readAll(buf);</span>
+<span class="line" id="L117">            <span class="tok-kw">if</span> (read &lt; <span class="tok-number">4</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.NotAnArchive;</span>
+<span class="line" id="L118"></span>
+<span class="line" id="L119">            eocd_offset = read - <span class="tok-number">4</span>;</span>
+<span class="line" id="L120">            <span class="tok-kw">while</span> (eocd_offset &gt;= <span class="tok-number">0</span>) : (eocd_offset -= <span class="tok-number">1</span>) {</span>
+<span class="line" id="L121">                <span class="tok-kw">const</span> signature = std.mem.readIntLittle(<span class="tok-type">u32</span>, buf[eocd_offset..][<span class="tok-number">0</span>..<span class="tok-number">4</span>]);</span>
+<span class="line" id="L122">                <span class="tok-kw">if</span> (signature == format.EndOfCentralDirectoryRecord.signature) {</span>
+<span class="line" id="L123">                    eocd_offset = read - eocd_offset;</span>
+<span class="line" id="L124"></span>
+<span class="line" id="L125">                    <span class="tok-kw">break</span> :find_eocd;</span>
+<span class="line" id="L126">                }</span>
+<span class="line" id="L127"></span>
+<span class="line" id="L128">                <span class="tok-comment">// prevent overflow</span>
+</span>
+<span class="line" id="L129">                <span class="tok-kw">if</span> (eocd_offset == <span class="tok-number">0</span>) <span class="tok-kw">continue</span> :find_eocd;</span>
+<span class="line" id="L130">            }</span>
+<span class="line" id="L131">        }</span>
+<span class="line" id="L132"></span>
+<span class="line" id="L133">        <span class="tok-comment">// pos - read + offset</span>
+</span>
+<span class="line" id="L134">        self.start_offset = (<span class="tok-kw">try</span> seeker.getPos()) - eocd_offset;</span>
+<span class="line" id="L135"></span>
+<span class="line" id="L136">        <span class="tok-kw">try</span> seeker.seekTo(self.start_offset + <span class="tok-number">4</span>);</span>
+<span class="line" id="L137">        <span class="tok-kw">const</span> eocd = <span class="tok-kw">try</span> format.EndOfCentralDirectoryRecord.read(reader);</span>
+<span class="line" id="L138"></span>
+<span class="line" id="L139">        <span class="tok-kw">var</span> directory_size: <span class="tok-type">u64</span> = eocd.directory_size;</span>
+<span class="line" id="L140">        <span class="tok-kw">var</span> directory_offset: <span class="tok-type">u64</span> = eocd.directory_offset;</span>
+<span class="line" id="L141">        <span class="tok-kw">var</span> entries_total: <span class="tok-type">u64</span> = eocd.entries_total;</span>
+<span class="line" id="L142"></span>
+<span class="line" id="L143">        <span class="tok-comment">// Look for the zip64 end of central directory locator if we need to</span>
+</span>
+<span class="line" id="L144"></span>
+<span class="line" id="L145">        <span class="tok-kw">if</span> (eocd.needs64()) {</span>
+<span class="line" id="L146">            <span class="tok-kw">var</span> offset: <span class="tok-type">usize</span> = <span class="tok-number">0</span>;</span>
+<span class="line" id="L147">            find_eocd64l: <span class="tok-kw">while</span> (<span class="tok-null">true</span>) {</span>
+<span class="line" id="L148">                <span class="tok-kw">if</span> ((<span class="tok-kw">try</span> seeker.getPos()) == <span class="tok-number">0</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.InvalidArchive;</span>
+<span class="line" id="L149">                <span class="tok-kw">try</span> seeker.seekBy(-<span class="tok-number">1021</span>);</span>
+<span class="line" id="L150"></span>
+<span class="line" id="L151">                <span class="tok-kw">const</span> read = <span class="tok-kw">try</span> reader.readAll(buf);</span>
+<span class="line" id="L152"></span>
+<span class="line" id="L153">                offset = read - <span class="tok-number">4</span>;</span>
+<span class="line" id="L154">                <span class="tok-kw">while</span> (offset &gt;= <span class="tok-number">0</span>) : (offset -= <span class="tok-number">1</span>) {</span>
+<span class="line" id="L155">                    <span class="tok-kw">const</span> signature = std.mem.readIntLittle(<span class="tok-type">u32</span>, buf[offset..][<span class="tok-number">0</span>..<span class="tok-number">4</span>]);</span>
+<span class="line" id="L156">                    <span class="tok-kw">if</span> (signature == format.EndOfCentralDirectory64Locator.signature) {</span>
+<span class="line" id="L157">                        <span class="tok-kw">try</span> seeker.seekBy(-<span class="tok-builtin">@intCast</span>(<span class="tok-type">i64</span>, read - offset) + <span class="tok-number">4</span>);</span>
+<span class="line" id="L158">                        <span class="tok-kw">break</span> :find_eocd64l;</span>
+<span class="line" id="L159">                    }</span>
+<span class="line" id="L160"></span>
+<span class="line" id="L161">                    <span class="tok-comment">// prevent overflow</span>
+</span>
+<span class="line" id="L162">                    <span class="tok-kw">if</span> (offset == <span class="tok-number">0</span>) <span class="tok-kw">continue</span> :find_eocd64l;</span>
+<span class="line" id="L163">                }</span>
+<span class="line" id="L164">            }</span>
+<span class="line" id="L165"></span>
+<span class="line" id="L166">            <span class="tok-kw">const</span> eocd64l = <span class="tok-kw">try</span> format.EndOfCentralDirectory64Locator.read(reader);</span>
+<span class="line" id="L167">            <span class="tok-kw">try</span> seeker.seekTo(eocd64l.offset);</span>
+<span class="line" id="L168"></span>
+<span class="line" id="L169">            self.start_offset = eocd64l.offset;</span>
+<span class="line" id="L170"></span>
+<span class="line" id="L171">            <span class="tok-kw">const</span> eocd64 = <span class="tok-kw">try</span> format.EndOfCentralDirectory64Record.read(reader);</span>
+<span class="line" id="L172"></span>
+<span class="line" id="L173">            <span class="tok-kw">if</span> (eocd.directory_size == <span class="tok-number">0xffffffff</span>) {</span>
+<span class="line" id="L174">                directory_size = eocd64.directory_size;</span>
+<span class="line" id="L175">            }</span>
+<span class="line" id="L176"></span>
+<span class="line" id="L177">            <span class="tok-kw">if</span> (eocd.directory_offset == <span class="tok-number">0xffffffff</span>) {</span>
+<span class="line" id="L178">                directory_offset = eocd64.directory_offset;</span>
+<span class="line" id="L179">            }</span>
+<span class="line" id="L180"></span>
+<span class="line" id="L181">            <span class="tok-kw">if</span> (eocd.entries_total == <span class="tok-number">0xffff</span>) {</span>
+<span class="line" id="L182">                entries_total = eocd64.num_entries_total;</span>
+<span class="line" id="L183">            }</span>
+<span class="line" id="L184">        }</span>
+<span class="line" id="L185"></span>
+<span class="line" id="L186">        self.directory_offset = directory_offset;</span>
+<span class="line" id="L187">        self.directory_size = directory_size;</span>
+<span class="line" id="L188"></span>
+<span class="line" id="L189">        <span class="tok-comment">// Begin loading central directory</span>
+</span>
+<span class="line" id="L190"></span>
+<span class="line" id="L191">        self.start_offset -= directory_offset + directory_size;</span>
+<span class="line" id="L192"></span>
+<span class="line" id="L193">        <span class="tok-kw">try</span> self.directory.resize(self.allocator, entries_total);</span>
+<span class="line" id="L194">        <span class="tok-kw">try</span> self.filename_buf.ensureTotalCapacity(self.allocator, directory_size - (entries_total * <span class="tok-number">42</span>));</span>
+<span class="line" id="L195"></span>
+<span class="line" id="L196">        <span class="tok-kw">try</span> seeker.seekTo(self.start_offset + directory_offset);</span>
+<span class="line" id="L197"></span>
+<span class="line" id="L198">        <span class="tok-kw">var</span> buffered = BufferedSeekableSource.buffered(reader);</span>
+<span class="line" id="L199">        <span class="tok-kw">const</span> buffered_reader = buffered.reader();</span>
+<span class="line" id="L200"></span>
+<span class="line" id="L201">        <span class="tok-kw">for</span> (self.directory.items) |*item| {</span>
+<span class="line" id="L202">            item.* = <span class="tok-kw">try</span> format.CentralDirectoryRecord.read(buffered_reader);</span>
+<span class="line" id="L203"></span>
+<span class="line" id="L204">            item.filename_idx = self.filename_buf.items.len;</span>
+<span class="line" id="L205">            self.filename_buf.items.len += item.filename_len;</span>
+<span class="line" id="L206"></span>
+<span class="line" id="L207">            <span class="tok-kw">const</span> nread = <span class="tok-kw">try</span> buffered_reader.readAll(self.filename_buf.items[item.filename_idx..]);</span>
+<span class="line" id="L208">            <span class="tok-kw">if</span> (nread != item.filename_len) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.EndOfStream;</span>
+<span class="line" id="L209"></span>
+<span class="line" id="L210">            <span class="tok-kw">if</span> (item.needs64()) {</span>
+<span class="line" id="L211">                <span class="tok-kw">var</span> pos: <span class="tok-type">usize</span> = <span class="tok-number">0</span>;</span>
+<span class="line" id="L212">                <span class="tok-kw">while</span> (pos &lt; item.extra_len) {</span>
+<span class="line" id="L213">                    <span class="tok-kw">const</span> header_id = <span class="tok-kw">try</span> buffered_reader.readIntLittle(<span class="tok-type">u16</span>);</span>
+<span class="line" id="L214">                    <span class="tok-kw">const</span> data_len = <span class="tok-kw">try</span> buffered_reader.readIntLittle(<span class="tok-type">u16</span>);</span>
+<span class="line" id="L215">                    pos += <span class="tok-number">4</span>;</span>
+<span class="line" id="L216"></span>
+<span class="line" id="L217">                    <span class="tok-kw">if</span> (header_id == <span class="tok-number">0x0001</span>) {</span>
+<span class="line" id="L218">                        <span class="tok-kw">const</span> before = pos;</span>
+<span class="line" id="L219"></span>
+<span class="line" id="L220">                        <span class="tok-kw">if</span> (item.uncompressed_size == <span class="tok-number">0xffffffff</span>) {</span>
+<span class="line" id="L221">                            item.uncompressed_size = <span class="tok-kw">try</span> buffered_reader.readIntLittle(<span class="tok-type">u64</span>);</span>
+<span class="line" id="L222">                            pos += <span class="tok-number">8</span>;</span>
+<span class="line" id="L223">                        }</span>
+<span class="line" id="L224"></span>
+<span class="line" id="L225">                        <span class="tok-kw">if</span> (item.compressed_size == <span class="tok-number">0xffffffff</span>) {</span>
+<span class="line" id="L226">                            item.compressed_size = <span class="tok-kw">try</span> buffered_reader.readIntLittle(<span class="tok-type">u64</span>);</span>
+<span class="line" id="L227">                            pos += <span class="tok-number">8</span>;</span>
+<span class="line" id="L228">                        }</span>
+<span class="line" id="L229"></span>
+<span class="line" id="L230">                        <span class="tok-kw">if</span> (item.local_offset == <span class="tok-number">0xffffffff</span>) {</span>
+<span class="line" id="L231">                            item.local_offset = <span class="tok-kw">try</span> buffered_reader.readIntLittle(<span class="tok-type">u64</span>);</span>
+<span class="line" id="L232">                            pos += <span class="tok-number">8</span>;</span>
+<span class="line" id="L233">                        }</span>
+<span class="line" id="L234"></span>
+<span class="line" id="L235">                        <span class="tok-kw">const</span> nread64 = pos - before;</span>
+<span class="line" id="L236">                        <span class="tok-kw">if</span> (nread64 != data_len) {</span>
+<span class="line" id="L237">                            <span class="tok-kw">try</span> BufferedSeekableSource.seekBy(seeker, &amp;buffered, <span class="tok-builtin">@intCast</span>(<span class="tok-type">i64</span>, data_len - nread64));</span>
+<span class="line" id="L238">                            pos += data_len - nread64;</span>
+<span class="line" id="L239">                        }</span>
+<span class="line" id="L240">                    } <span class="tok-kw">else</span> {</span>
+<span class="line" id="L241">                        <span class="tok-kw">try</span> BufferedSeekableSource.seekBy(seeker, &amp;buffered, data_len);</span>
+<span class="line" id="L242">                        pos += data_len;</span>
+<span class="line" id="L243">                    }</span>
+<span class="line" id="L244">                }</span>
+<span class="line" id="L245">            } <span class="tok-kw">else</span> {</span>
+<span class="line" id="L246">                <span class="tok-kw">try</span> BufferedSeekableSource.seekBy(seeker, &amp;buffered, item.extra_len);</span>
+<span class="line" id="L247">            }</span>
+<span class="line" id="L248"></span>
+<span class="line" id="L249">            <span class="tok-kw">try</span> BufferedSeekableSource.seekBy(seeker, &amp;buffered, item.comment_len);</span>
+<span class="line" id="L250">        }</span>
+<span class="line" id="L251"></span>
+<span class="line" id="L252">        self.filename_buf.shrinkAndFree(self.allocator, self.filename_buf.items.len);</span>
+<span class="line" id="L253"></span>
+<span class="line" id="L254">        std.sort.sort(format.CentralDirectoryRecord, self.directory.items, self.filename_buf.items, lessThanCentralDirectoryRecord);</span>
+<span class="line" id="L255">    }</span>
+<span class="line" id="L256"></span>
+<span class="line" id="L257">    <span class="tok-kw">fn</span> <span class="tok-fn">readFilename</span>(self: ArchiveReader, item: format.CentralDirectoryRecord) []<span class="tok-kw">const</span> <span class="tok-type">u8</span> {</span>
+<span class="line" id="L258">        <span class="tok-kw">return</span> self.filename_buf.items[item.filename_idx..][<span class="tok-number">0</span>..item.filename_len];</span>
+<span class="line" id="L259">    }</span>
+<span class="line" id="L260"></span>
+<span class="line" id="L261">    <span class="tok-comment">/// Get the directory header at the given index.</span></span>
+<span class="line" id="L262">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">getHeader</span>(</span>
+<span class="line" id="L263">        self: ArchiveReader,</span>
+<span class="line" id="L264">        index: <span class="tok-type">usize</span>,</span>
+<span class="line" id="L265">    ) CentralDirectoryHeader {</span>
+<span class="line" id="L266">        <span class="tok-kw">return</span> CentralDirectoryHeader.read(self, self.directory.items[index]);</span>
+<span class="line" id="L267">    }</span>
+<span class="line" id="L268"></span>
+<span class="line" id="L269">    <span class="tok-comment">/// Get the directory header of a file with a given name.</span></span>
+<span class="line" id="L270">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">findFile</span>(</span>
+<span class="line" id="L271">        self: ArchiveReader,</span>
+<span class="line" id="L272">        name: []<span class="tok-kw">const</span> <span class="tok-type">u8</span>,</span>
+<span class="line" id="L273">    ) ?CentralDirectoryHeader {</span>
+<span class="line" id="L274">        <span class="tok-kw">for</span> (self.directory.items) |item, i| {</span>
+<span class="line" id="L275">            <span class="tok-kw">const</span> filename = self.readFilename(item);</span>
+<span class="line" id="L276">            <span class="tok-kw">if</span> (std.mem.eql(<span class="tok-type">u8</span>, filename, name)) {</span>
+<span class="line" id="L277">                <span class="tok-kw">return</span> self.getHeader(i);</span>
+<span class="line" id="L278">            }</span>
+<span class="line" id="L279">        }</span>
+<span class="line" id="L280">    }</span>
+<span class="line" id="L281"></span>
+<span class="line" id="L282">    <span class="tok-comment">/// Get the directory header of a file with a given name.</span></span>
+<span class="line" id="L283">    <span class="tok-comment">///</span></span>
+<span class="line" id="L284">    <span class="tok-comment">/// Strips off the first `strip_components` components of the path in the</span></span>
+<span class="line" id="L285">    <span class="tok-comment">/// archive before comparing.</span></span>
+<span class="line" id="L286">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">findFileInside</span>(</span>
+<span class="line" id="L287">        self: ArchiveReader,</span>
+<span class="line" id="L288">        name: []<span class="tok-kw">const</span> <span class="tok-type">u8</span>,</span>
+<span class="line" id="L289">        strip_components: <span class="tok-type">usize</span>,</span>
+<span class="line" id="L290">    ) ?CentralDirectoryHeader {</span>
+<span class="line" id="L291">        find: <span class="tok-kw">for</span> (self.directory.items) |item, i| {</span>
+<span class="line" id="L292">            <span class="tok-kw">var</span> filename = self.readFilename(item);</span>
+<span class="line" id="L293"></span>
+<span class="line" id="L294">            <span class="tok-kw">var</span> j: <span class="tok-type">usize</span> = <span class="tok-number">0</span>;</span>
+<span class="line" id="L295">            <span class="tok-kw">while</span> (j &lt; strip_components) : (j += <span class="tok-number">1</span>) {</span>
+<span class="line" id="L296">                <span class="tok-kw">const</span> idx = std.mem.indexOf(<span class="tok-type">u8</span>, filename, <span class="tok-str">&quot;/&quot;</span>) <span class="tok-kw">orelse</span> <span class="tok-kw">continue</span> :find;</span>
+<span class="line" id="L297">                filename = filename[idx + <span class="tok-number">1</span> ..];</span>
+<span class="line" id="L298">            }</span>
+<span class="line" id="L299"></span>
+<span class="line" id="L300">            <span class="tok-kw">if</span> (std.mem.eql(<span class="tok-type">u8</span>, filename, name)) {</span>
+<span class="line" id="L301">                <span class="tok-kw">return</span> self.getHeader(i);</span>
+<span class="line" id="L302">            }</span>
+<span class="line" id="L303">        }</span>
+<span class="line" id="L304">    }</span>
+<span class="line" id="L305"></span>
+<span class="line" id="L306">    <span class="tok-comment">/// Extracts the contents of an archived file and writes it into the given</span></span>
+<span class="line" id="L307">    <span class="tok-comment">/// writer.</span></span>
+<span class="line" id="L308">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">extractFile</span>(</span>
+<span class="line" id="L309">        self: *ArchiveReader,</span>
+<span class="line" id="L310">        header: CentralDirectoryHeader,</span>
+<span class="line" id="L311">        writer: <span class="tok-kw">anytype</span>,</span>
+<span class="line" id="L312">        verify: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L313">    ) !<span class="tok-type">void</span> {</span>
+<span class="line" id="L314">        <span class="tok-kw">if</span> (header.uncompressed_size == <span class="tok-number">0</span>) <span class="tok-kw">return</span>;</span>
+<span class="line" id="L315"></span>
+<span class="line" id="L316">        <span class="tok-kw">if</span> (header.version_needed.major &gt; <span class="tok-number">4</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.UnsupportedVersion;</span>
+<span class="line" id="L317">        <span class="tok-kw">if</span> (header.version_needed.major == <span class="tok-number">4</span> <span class="tok-kw">and</span> header.version_needed.minor &gt; <span class="tok-number">5</span>) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.UnsupportedVersion;</span>
+<span class="line" id="L318"></span>
+<span class="line" id="L319">        <span class="tok-kw">const</span> reader = self.source.reader();</span>
+<span class="line" id="L320">        <span class="tok-kw">const</span> seeker = self.source.seekableStream();</span>
+<span class="line" id="L321"></span>
+<span class="line" id="L322">        <span class="tok-kw">try</span> seeker.seekTo(self.start_offset + header.offset);</span>
+<span class="line" id="L323">        <span class="tok-kw">const</span> local_header = <span class="tok-kw">try</span> format.LocalFileRecord.read(reader);</span>
+<span class="line" id="L324"></span>
+<span class="line" id="L325">        <span class="tok-kw">try</span> seeker.seekBy(local_header.filename_len + local_header.extra_len);</span>
+<span class="line" id="L326"></span>
+<span class="line" id="L327">        <span class="tok-kw">var</span> buffered = BufferedSeekableSource.buffered(reader);</span>
+<span class="line" id="L328">        <span class="tok-kw">const</span> buffered_reader = buffered.reader();</span>
+<span class="line" id="L329"></span>
+<span class="line" id="L330">        <span class="tok-kw">var</span> fifo = std.fifo.LinearFifo(<span class="tok-type">u8</span>, .{ .Static = <span class="tok-number">8192</span> }).init();</span>
+<span class="line" id="L331"></span>
+<span class="line" id="L332">        <span class="tok-kw">var</span> limited = BufferedSeekableSource.LimitedReader.init(buffered_reader, header.compressed_size);</span>
+<span class="line" id="L333">        <span class="tok-kw">const</span> limited_reader = limited.reader();</span>
+<span class="line" id="L334"></span>
+<span class="line" id="L335">        <span class="tok-kw">var</span> hashing = HashingWriter(<span class="tok-builtin">@TypeOf</span>(writer), format.Crc32).init(writer);</span>
+<span class="line" id="L336">        <span class="tok-kw">const</span> hwriter = hashing.writer();</span>
+<span class="line" id="L337"></span>
+<span class="line" id="L338">        <span class="tok-kw">switch</span> (header.compression_method) {</span>
+<span class="line" id="L339">            .none =&gt; {</span>
+<span class="line" id="L340">                <span class="tok-kw">try</span> fifo.pump(limited_reader, hwriter);</span>
+<span class="line" id="L341">            },</span>
+<span class="line" id="L342">            .deflated =&gt; {</span>
+<span class="line" id="L343">                <span class="tok-comment">// This is not reusable, is there a reason for that?</span>
+</span>
+<span class="line" id="L344">                <span class="tok-kw">var</span> decompressor = <span class="tok-kw">try</span> deflate.decompressor(self.allocator, limited_reader, <span class="tok-null">null</span>);</span>
+<span class="line" id="L345">                <span class="tok-kw">defer</span> decompressor.deinit();</span>
+<span class="line" id="L346"></span>
+<span class="line" id="L347">                <span class="tok-kw">try</span> fifo.pump(decompressor.reader(), hwriter);</span>
+<span class="line" id="L348">            },</span>
+<span class="line" id="L349">            <span class="tok-kw">else</span> =&gt; <span class="tok-kw">return</span> <span class="tok-kw">error</span>.UnsupportedCompressionMethod,</span>
+<span class="line" id="L350">        }</span>
+<span class="line" id="L351"></span>
+<span class="line" id="L352">        <span class="tok-kw">if</span> (verify) {</span>
+<span class="line" id="L353">            <span class="tok-kw">if</span> (hashing.hash.final() != header.crc32) <span class="tok-kw">return</span> <span class="tok-kw">error</span>.InvalidChecksum;</span>
+<span class="line" id="L354">        }</span>
+<span class="line" id="L355">    }</span>
+<span class="line" id="L356"></span>
+<span class="line" id="L357">    <span class="tok-comment">/// Extracts the contents of an archived file and returns it as a string.</span></span>
+<span class="line" id="L358">    <span class="tok-comment">///</span></span>
+<span class="line" id="L359">    <span class="tok-comment">/// The caller owns the returned memory.</span></span>
+<span class="line" id="L360">    <span class="tok-kw">pub</span> <span class="tok-kw">fn</span> <span class="tok-fn">extractFileString</span>(</span>
+<span class="line" id="L361">        self: *ArchiveReader,</span>
+<span class="line" id="L362">        header: CentralDirectoryHeader,</span>
+<span class="line" id="L363">        alloc: std.mem.Allocator,</span>
+<span class="line" id="L364">        verify: <span class="tok-type">bool</span>,</span>
+<span class="line" id="L365">    ) ![]<span class="tok-kw">const</span> <span class="tok-type">u8</span> {</span>
+<span class="line" id="L366">        <span class="tok-kw">const</span> out = <span class="tok-kw">try</span> alloc.alloc(<span class="tok-type">u8</span>, header.uncompressed_size);</span>
+<span class="line" id="L367">        <span class="tok-kw">errdefer</span> alloc.free(out);</span>
+<span class="line" id="L368"></span>
+<span class="line" id="L369">        <span class="tok-kw">var</span> stream = std.io.fixedBufferStream(out);</span>
+<span class="line" id="L370"></span>
+<span class="line" id="L371">        <span class="tok-kw">try</span> self.extractFile(header, stream.writer(), verify);</span>
+<span class="line" id="L372"></span>
+<span class="line" id="L373">        <span class="tok-kw">return</span> out;</span>
+<span class="line" id="L374">    }</span>
+<span class="line" id="L375">};</span>
+<span class="line" id="L376"></span>
+<span class="line" id="L377"><span class="tok-kw">comptime</span> {</span>
+<span class="line" id="L378">    std.testing.refAllDecls(<span class="tok-builtin">@This</span>());</span>
+<span class="line" id="L379">}</span>
+<span class="line" id="L380"></span>
+</code></pre></body>
+</html>
