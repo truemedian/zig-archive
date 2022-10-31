@@ -4,6 +4,8 @@ const archive = @import("archive");
 const alloc = std.heap.c_allocator;
 
 pub fn main() !void {
+    try std.fs.cwd().makePath("tests/zip");
+
     const file = try std.fs.cwd().createFile("tests/zip/test.zip", .{});
     defer file.close();
 
