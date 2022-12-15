@@ -277,6 +277,7 @@ pub const ArchiveReader = struct {
                 return self.getHeader(i);
             }
         }
+        return null;
     }
 
     /// Get the directory header of a file with a given name.
