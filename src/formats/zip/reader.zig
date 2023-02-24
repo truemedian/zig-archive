@@ -52,7 +52,7 @@ fn lessThanCentralDirectoryRecord(buf: []const u8, a: format.CentralDirectoryRec
     const a_name = buf[a.filename_idx..][0..a.filename_len];
     const b_name = buf[b.filename_idx..][0..b.filename_len];
 
-    for (a_name) |a_ch, i| {
+    for (a_name, 0..) |a_ch, i| {
         if (i == b_name.len) return false;
 
         const b_ch = b_name[i];
@@ -271,7 +271,7 @@ pub const ArchiveReader = struct {
         self: ArchiveReader,
         name: []const u8,
     ) ?CentralDirectoryHeader {
-        for (self.directory.items) |item, i| {
+        for (self.directory.items, 0..) |item, i| {
             const filename = self.readFilename(item);
             if (std.mem.eql(u8, filename, name)) {
                 return self.getHeader(i);
@@ -289,7 +289,7 @@ pub const ArchiveReader = struct {
         name: []const u8,
         strip_components: usize,
     ) ?CentralDirectoryHeader {
-        find: for (self.directory.items) |item, i| {
+        find: for (self.directory.items, 0..) |item, i| {
             var filename = self.readFilename(item);
 
             var j: usize = 0;

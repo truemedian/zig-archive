@@ -40,13 +40,12 @@ pub const ArchiveWriter = struct {
 
     pub fn finish(self: *ArchiveWriter) !void {
         const offset = try self.sink.getPos();
-        for (self.directory.items) |record, i| {
+        for (self.directory.items, self.extra_data.items) |record, extra| {
             try record.write(self.sink.writer());
 
             const name = self.filenames.items[record.filename_idx..][0..record.filename_len];
             try self.sink.writer().writeAll(name);
 
-            const extra = self.extra_data.items[i];
             try extra.write(self.sink.writer());
         }
 
