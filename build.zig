@@ -12,12 +12,20 @@ const bench = .{
 };
 
 pub fn build(b: *Builder) void {
-    const mode = b.standardReleaseOptions();
+    const optimize = b.standardOptimizeOption(.{});
+
+    b.addModule(.{
+        .name = "archive",
+        .source_file = .{ .path = "src/main.zig" },
+    });
+    const archive_module = b.modules.get("archive") orelse unreachable;
 
     // Library Tests
 
-    const lib_tests = b.addTest("src/main.zig");
-    lib_tests.setBuildMode(mode);
+    const lib_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/main.zig" },
+        .optimize = optimize,
+    });
 
     const lib_tests_step = b.step("test", "Run all library tests");
     lib_tests_step.dependOn(&lib_tests.step);
@@ -30,11 +38,14 @@ pub fn build(b: *Builder) void {
     // Test Runners
 
     inline for (tests) |file| {
-        const zip_runner = b.addExecutable(file, "tests/" ++ file ++ ".zig");
-        zip_runner.setBuildMode(mode);
+        const zip_runner = b.addExecutable(.{
+            .name = file,
+            .root_source_file = .{ .path = "tests/" ++ file ++ ".zig" },
+            .optimize = optimize,
+        });
         zip_runner.linkLibC();
 
-        zip_runner.addPackagePath("archive", "src/main.zig");
+        zip_runner.addModule("archive", archive_module);
 
         zip_runner.install();
         const run_zip_runner = zip_runner.run();
@@ -55,10 +66,13 @@ pub fn build(b: *Builder) void {
     bench_options.addOption(u32, "runtime", runtime);
 
     inline for (bench) |file| {
-        const zip_bench = b.addExecutable(file, "tests/" ++ file ++ ".zig");
-        zip_bench.setBuildMode(mode);
+        const zip_bench = b.addExecutable(.{
+            .name = file,
+            .root_source_file = .{ .path = "tests/" ++ file ++ ".zig" },
+            .optimize = optimize,
+        });
         zip_bench.addOptions("build_options", bench_options);
-        zip_bench.addPackagePath("archive", "src/main.zig");
+        zip_bench.addModule("archive", archive_module);
 
         zip_bench.install();
         const run_zip_bench = zip_bench.run();

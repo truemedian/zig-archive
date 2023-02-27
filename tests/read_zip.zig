@@ -26,7 +26,7 @@ pub fn main() !void {
 
         // Extract
 
-        for (arc.directory.items) |_, j| {
+        for (0..arc.directory.items.len) |j| {
             const hdr = arc.getHeader(j);
 
             if (hdr.uncompressed_size > 0) {

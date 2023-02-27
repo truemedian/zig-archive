@@ -1,8 +1,8 @@
 const std = @import("std");
 
 pub fn mixin(comptime ReaderType: type, comptime SeekerType: type) type {
-    const ReaderCtx = std.meta.fieldInfo(ReaderType, .context).field_type;
-    const SeekerTypeCtx = std.meta.fieldInfo(SeekerType, .context).field_type;
+    const ReaderCtx = std.meta.fieldInfo(ReaderType, .context).type;
+    const SeekerTypeCtx = std.meta.fieldInfo(SeekerType, .context).type;
 
     if (ReaderCtx != SeekerTypeCtx)
         @compileError("ReaderType and SeekerType must have the same context type");
@@ -17,26 +17,33 @@ pub fn mixin(comptime ReaderType: type, comptime SeekerType: type) type {
         pub fn seekBy(seeker: SeekerType, buffer: *BufferedReader, offset: i64) !void {
             if (offset == 0) return;
 
+            const count = if (buffer.start > buffer.end)
+                buffer.buf.len - buffer.start + buffer.end
+            else
+                buffer.end - buffer.start;
+
             if (offset > 0) {
                 const u_offset = @intCast(u64, offset);
 
-                if (u_offset <= buffer.fifo.count) {
-                    buffer.fifo.discard(u_offset);
-                } else if (u_offset <= buffer.fifo.count + buffer.fifo.buf.len) {
-                    const left = u_offset - buffer.fifo.count;
+                if (u_offset <= count) {
+                    buffer.start += u_offset;
+                    if (buffer.start > buffer.buf.len)
+                        buffer.start %= buffer.buf.len;
+                } else if (u_offset <= count + buffer.buf.len) {
+                    const left = u_offset - count;
 
-                    buffer.fifo.discard(buffer.fifo.count);
+                    buffer.start = buffer.end;
                     try buffer.reader().skipBytes(left, .{ .buf_size = 8192 });
                 } else {
-                    const left = u_offset - buffer.fifo.count;
+                    const left = u_offset - count;
 
-                    buffer.fifo.discard(buffer.fifo.count);
+                    buffer.start = buffer.end;
                     try seeker.seekBy(@intCast(i64, left));
                 }
             } else {
-                const left = offset - @intCast(i64, buffer.fifo.count);
+                const left = offset - @intCast(i64, count);
 
-                buffer.fifo.discard(buffer.fifo.count);
+                buffer.start = buffer.end;
                 try seeker.seekBy(left);
             }
         }
@@ -44,7 +51,12 @@ pub fn mixin(comptime ReaderType: type, comptime SeekerType: type) type {
         pub fn getPos(seeker: SeekerType, buffer: *BufferedReader) !u64 {
             const pos = try seeker.getPos();
 
-            return pos - buffer.fifo.count;
+            const count = if (buffer.start > buffer.end)
+                buffer.buf.len - buffer.start + buffer.end
+            else
+                buffer.end - buffer.start;
+
+            return pos - count;
         }
 
         pub fn seekTo(seeker: SeekerType, buffer: *BufferedReader, pos: u64) !void {
